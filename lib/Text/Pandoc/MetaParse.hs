@@ -135,7 +135,7 @@ list = liftResult go
       MetaList s -> pure s
       z          -> throwTypeError "List" z
 
--- | Expect a `MetaMap`. A type-restricted version of `parseValue`.
+-- | Expect a `MetaMap`. A type-restricted version of `parseValue`. Try using @onMeta@ and functions like @key@ before using this.
 metaMap :: Parse MetaValue (Map String MetaValue)
 metaMap = liftResult go
   where
@@ -151,14 +151,9 @@ bool = liftResult go
       MetaBool b -> pure b
       z          -> throwTypeError "Bool" z
 
--- | Run a @ParseMeta@, expecting a @MetaMap@.
-
+-- | Run a @ParseMeta@, expecting a @MetaMap@. Used for interacting with @MetaMap@.
 onMeta :: Parse Meta a -> Parse MetaValue a
 onMeta act = metaMap >>= liftEither . runParse act . Meta
-
--- | Read a value from a key, returning `Just a` if the key is set and `Nothing` if the key is not set. A lifted version of @lookupMeta@ that parses its result.
-keyMaybe :: FromMetaValue a => String -> Parse Meta (Maybe a)
-keyMaybe k = ask >>= traverse fromValue . lookupMeta k
 
 -- | Read a value from a key, throwing an error if the key is not set.
 key :: FromMetaValue a => String -> Parse Meta a
@@ -166,6 +161,11 @@ key k = keyMaybe k >>= go
   where
     go Nothing  = throwExpect $ "the key " <> k <> " to be set"
     go (Just a) = pure a
+
+-- | Read a value from a key, returning `Just a` if the key is set and `Nothing` if the key is not set. A lifted version of @lookupMeta@ that parses its result.
+keyMaybe :: FromMetaValue a => String -> Parse Meta (Maybe a)
+keyMaybe k = ask >>= traverse fromValue . lookupMeta k
+
 
 -- | Things that can be read from meta values.
 class FromMetaValue a where
