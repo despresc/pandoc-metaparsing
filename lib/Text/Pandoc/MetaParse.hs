@@ -18,9 +18,6 @@ module Text.Pandoc.MetaParse
   -- * Using this library
   -- $use
 
-  -- ** The @MetaObject@ type
-  -- $metaobj
-
   -- ** @MetaObject@ and @MetaValue@ parsers
   -- $metaparse
 
@@ -109,14 +106,11 @@ import qualified Data.Map as Map
 -- Or one can mix instances of both `FromValue` and `FromObject`, or use
 -- neither and simply write the parser one needs directly.
 
--- $metaobj
---
+-- $metaparse
 -- In this library we think of the @Map String MetaValue@ in a @MetaMap@ as
 -- representing something like a JSON @Object@, where the @String@ keys
 -- represent named fields. We wrap this @Map@ in a `MetaObject` newtype wrapper
 -- to reflect this.
-
--- $metaparse
 --
 -- The `ParseObject` and `ParseValue` monads are linked by two families of functions.
 --
@@ -226,7 +220,7 @@ runParse = runReaderT . unParse
 runParseValue :: FromValue a => MetaValue -> Result a
 runParseValue = runParse parseValue
 
--- | Convert a `MetaObject`, returning a `Result`
+-- | Convert a `MetaObject`, returning a `Result`.
 runParseObject :: FromObject a => MetaObject -> Result a
 runParseObject = runParse parseObject
 
@@ -252,7 +246,9 @@ liftResult = Parse . ReaderT
 
 infix 0 <?>
 
--- | With @act \<?\> e@, catch a @MetaError@ from @act@, replacing a @MetaExpectGotError _ g@ with @MetaExpectGotError e g@ and replacing any other error with @MetaExpectError e@.
+-- | With @act \<?\> e@, catch a @MetaError@ from @act@, replacing a
+-- @MetaExpectGotError _ g@ with @MetaExpectGotError e g@ and replacing any other
+-- error with @MetaExpectError e@.
 (<?>) :: MonadError MetaError m => m a -> String -> m a
 (<?>) = flip expect
 
@@ -300,7 +296,8 @@ stringlike = liftResult go
       MetaBool b    -> pure $ if b then "true" else "false"
       z             -> throwTypeError "String-like " z
 
--- | A @String@ parser that succeeds on @MetaString@ and on @MetaList@ whose entries parse as @Char@.
+-- | A @String@ parser that succeeds on @MetaString@ and on @MetaList@ whose
+-- entries parse as @Char@.
 weakString :: ParseValue String
 weakString = liftResult go
   where
@@ -309,7 +306,8 @@ weakString = liftResult go
       MetaList l   -> traverse runParseValue l
       z            -> throwTypeError "String" z
 
--- | An @[Inline]@ parser that succeeds on @MetaInlines@ and on a @MetaList@ whose entries parse as @Inline@.
+-- | An @[Inline]@ parser that succeeds on @MetaInlines@ and on a @MetaList@
+-- whose entries parse as @Inline@.
 weakInlines :: ParseValue [Inline]
 weakInlines = liftResult go
   where
@@ -319,7 +317,8 @@ weakInlines = liftResult go
       z             -> throwTypeError "Inlines" z
 
 
--- | A @[Block]@ parser that succeeds on @MetaBlocks@ and on a @MetaList@ whose entries parse as @Block@.
+-- | A @[Block]@ parser that succeeds on @MetaBlocks@ and on a @MetaList@ whose
+-- entries parse as @Block@.
 weakBlocks :: ParseValue [Block]
 weakBlocks = liftResult go
   where
@@ -328,7 +327,9 @@ weakBlocks = liftResult go
       MetaList l   -> traverse runParseValue l
       z            -> throwTypeError "Blocks" z
 
--- | Run a @MetaObject@ parser as a @MetaValue@ parser, expecting a @MetaMap@. One main link between the `ParseObject` and `ParseValue` parsers (the others being the various @field@ functions).
+-- | Run a @MetaObject@ parser as a @MetaValue@ parser, throwing an error if the
+-- @MetaValue@ is not a @MetaMap@. One main link between the `ParseObject` and
+-- `ParseValue` parsers (the others being the various @field@ functions).
 objectWith :: ParseObject a -> ParseValue a
 objectWith act = metaMap >>= embedResult . runParse act . MetaObject
 
@@ -336,7 +337,8 @@ objectWith act = metaMap >>= embedResult . runParse act . MetaObject
 object :: FromObject a => ParseValue a
 object = objectWith parseObject
 
--- | Run a @MetaValue@ parser on the value of a key if it is set, returning @Just a@ if the key was set and @Nothing@ if it was not.
+-- | Run a @MetaValue@ parser on the value of a key if it is set, returning
+-- @Just a@ if the key was set and @Nothing@ if it was not.
 maybeFieldWith :: String -> ParseValue a -> ParseObject (Maybe a)
 maybeFieldWith k act = ask >>= go . lookupMetaObject k
   where
@@ -356,7 +358,8 @@ fieldWith k act = maybeFieldWith k act >>= go
 field :: FromValue a => String -> ParseObject a
 field = flip fieldWith parseValue
 
--- | Parse the value of a field if it is set and return @Just@ the result. Otherwise return @Nothing@.
+-- | Parse the value of a field if it is set and return @Just@ the result.
+-- Otherwise return @Nothing@.
 --
 -- > maybeField k = fieldWith k parseValue
 maybeField :: FromValue a => String -> ParseObject (Maybe a)
@@ -364,7 +367,8 @@ maybeField = flip maybeFieldWith parseValue
 
 infix 1 .!=
 
--- | Give a default value to a parser returning @Maybe a@. Useful for parsing optional fields.
+-- | Give a default value to a parser returning @Maybe a@. Useful for parsing
+-- optional fields.
 (.!=) :: Parse i (Maybe a) -> a -> Parse i a
 (.!=) = flip $ fmap . fromMaybe
 
@@ -384,7 +388,9 @@ class FromObject a where
 -- entries parse as either @Char@, @Inline@, or @Block@, then use `weakString`,
 -- `weakInlines`, or `weakBlocks`.
 --
--- No @Map String MetaValue@ instance is given. Prefer to use the functions `object` and `objectWith`. Use `metaMap` if you actually need to parse a @Map String MetaValue@.
+-- No @Map String MetaValue@ instance is given. Use the functions `object` and
+-- `objectWith` instead, using `metaMap` if you are sure you need to parse a
+-- @Map String MetaValue@.
 class FromValue a where
   parseValue :: ParseValue a
   parseListValue :: ParseValue [a]
