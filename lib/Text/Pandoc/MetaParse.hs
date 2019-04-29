@@ -380,7 +380,7 @@ maybeField = flip maybeFieldWith parseValue
 infix 1 .!=
 
 -- | Give a default value to a parser returning @Maybe a@. Useful for parsing
--- optional fields.
+-- optional fields with `maybeField`.
 (.!=) :: Parse i (Maybe a) -> a -> Parse i a
 (.!=) = flip $ fmap . fromMaybe
 
