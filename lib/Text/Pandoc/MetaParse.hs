@@ -46,7 +46,8 @@ module Text.Pandoc.MetaParse
   , objectWith
   , symbol
   , symbolFrom
-  , stringlike
+  , symbolLike
+  , stringified
   , metaMap
   , weakString
   , weakInlines
@@ -258,13 +259,30 @@ expect e = flip catchError go
     go (MetaExpectGotError _ g) = throwExpectGot e g
     go _                        = throwExpect e
 
--- | Parse a "symbol", a string representing an element of a Haskell type @a@. The parser @symbol sym x@ succeeds and returns @x@ if `stringlike` returns @sym@.
+-- | Succeeds on @MetaString s@ and @MetaInlines [Str s]@. Used in `symbol` and `symbolFrom`.
+symbolLike :: ParseValue String
+symbolLike = liftResult go
+  where
+    go x = case x of
+      MetaString s -> pure s
+      MetaInlines [Str s] -> pure s
+      z -> throwTypeError "symbol" z
+
+-- | Parse a "symbol", a string representing an element of a Haskell type @a@.
+-- The parser @symbol sym x@ succeeds and returns @x@ if `symbolLike` returns @sym@.
+--
+-- We use `symbolLike` and not the @String@ instance of @parseValue@ because
+-- Pandoc will parse bare text as @[Inline]@ and we would like to allow users to
+-- write symbols without enclosing them in quotation marks if possible. Notably,
+-- symbols containing whitespace or markdown characters will still need to be
+-- written between quotation marks, otherwise Pandoc would return @MetaInlines@
+-- containing more than just a @Str@.
 symbol :: String -> a -> ParseValue a
 symbol sym a = symbolFrom [(sym, a)]
 
--- | Parse a symbol from a given table. The parser @symbolFrom tbl@ succeeds if `stringlike` returns @sym@ and @sym@ is found in the table.
+-- | Parse a symbol from a given table. The parser @symbolFrom tbl@ succeeds if `symbolLike` returns @sym@ and @sym@ is found in the table.
 symbolFrom :: [(String, a)] -> ParseValue a
-symbolFrom tbl = stringlike >>= lookStr
+symbolFrom tbl = symbolLike >>= lookStr
   where
     err = intercalate ", " . fmap fst $ tbl
     lookStr x = case lookup x tbl of
@@ -280,8 +298,8 @@ metaMap = liftResult go
       z         -> throwTypeError "Map" z
 
 -- | Parse something other than a list or map and stringify it.
-stringlike :: ParseValue String
-stringlike = liftResult go
+stringified :: ParseValue String
+stringified = liftResult go
   where
     go x = case x of
       MetaString s  -> pure s
