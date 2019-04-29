@@ -4,6 +4,16 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 
+
+{-|
+Module      : Text.Pandoc.MetaParse
+Copyright   : (C) 2019 Christian Despres
+License     : MIT
+Stability   : experimental
+
+Types and instances for the container types.
+-}
+
 module Text.Pandoc.MetaParse where
 
 import           Control.Applicative
@@ -88,15 +98,19 @@ newtype Parse i a = Parse
   { unParse :: ReaderT i Result a
   } deriving (Functor, Applicative, Monad, Alternative, MonadPlus, MonadReader i, MonadError MetaError)
 
+-- | Run an explicit parser.
 runParse :: Parse i a -> i -> Result a
 runParse = runReaderT . unParse
 
+-- | Convert a `MetaValue`, returning a `Result`.
 runParseValue :: FromMetaValue a => MetaValue -> Result a
 runParseValue = runParse parseValue
 
+-- | Embed a `Result` in a `Parse` action.
 embedResult :: Result a -> Parse i a
 embedResult = Parse . ReaderT . const
 
+-- | Use a function as a `Parse` action.
 liftResult :: (i -> Result a) -> Parse i a
 liftResult = Parse . ReaderT
 
@@ -213,13 +227,14 @@ instance FromMetaValue Bool where
 instance FromMetaValue Text where
   parseValue = Text.pack <$> parseValue <?> "text"
 
+-- | Important: We don't consider a MetaList of singleton MetaStrings to be a @String@.
 instance FromMetaValue Char where
   parseValue = liftResult go
     where
       go (MetaString [x]) = pure x
       go (MetaString _)   = throwExpect "a string of length 1"
       go z                = throwTypeError "a character" z
-  parseListValue = string -- ^ Important: We don't consider a MetaList of singleton MetaStrings to be a @String@.
+  parseListValue = string
 
 instance FromMetaValue Meta where
   parseValue = onMeta ask
