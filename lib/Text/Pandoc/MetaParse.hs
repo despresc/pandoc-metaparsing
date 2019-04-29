@@ -289,7 +289,7 @@ symbolFrom tbl = symbolLike >>= lookStr
       Just a  -> pure a
       Nothing -> throwExpectGot err x
 
--- | Parse a @MetaMap@. You most likely want to use functions like `object`, `objectWith`, or `field` instead of this function.
+-- | Parse a @MetaMap@. You most likely want to use functions like `object`, `objectWith`, and `field` instead of this function.
 metaMap :: ParseValue (Map String MetaValue)
 metaMap = liftResult go
   where
@@ -308,7 +308,7 @@ stringified = liftResult go
       MetaBool b    -> pure $ if b then "true" else "false"
       z             -> throwTypeError "String-like " z
 
--- | A @String@ parser that succeeds on @MetaString@ and on @MetaList@ whose
+-- | A @String@ parser that succeeds on @MetaString@ and on a @MetaList@ whose
 -- entries parse as @Char@.
 weakString :: ParseValue String
 weakString = liftResult go
