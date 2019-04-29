@@ -13,7 +13,6 @@ import           Data.List            (intercalate)
 import           Data.Map             (Map)
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
-
 import           Text.Pandoc
 import           Text.Pandoc.Shared   (stringify)
 
