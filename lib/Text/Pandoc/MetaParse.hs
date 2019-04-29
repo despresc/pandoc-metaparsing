@@ -10,7 +10,7 @@ Copyright   : (C) 2019 Christian Despres
 License     : MIT
 Stability   : experimental
 
-Simple parsing of Pandoc `Meta` metadata.
+Simple parsing of Pandoc `Meta` metadata in the style of the Aeson library.
 -}
 
 module Text.Pandoc.MetaParse
@@ -32,11 +32,9 @@ module Text.Pandoc.MetaParse
   , runParseObject
   , parseMeta
   , parseMetaWith
-  -- * Parsing @MetaObject@ and @MetaValue@
+  -- * Parsing @MetaObject@ and @MetaValue@ values
   -- ** @MetaObject@ parsers
   , FromObject(..)
-  , object
-  , objectWith
   , fieldWith
   , maybeFieldWith
   , field
@@ -44,6 +42,8 @@ module Text.Pandoc.MetaParse
   , (.!=)
   -- ** @MetaValue@ parsers
   , FromValue(..)
+  , object
+  , objectWith
   , symbol
   , symbolFrom
   , stringlike
@@ -52,7 +52,6 @@ module Text.Pandoc.MetaParse
   , weakInlines
   , weakBlocks
   -- * Errors
-  -- ** Type of errors
   , MetaError(..)
   -- ** Modifying thrown errors
   , (<?>)
@@ -263,19 +262,14 @@ expect e = flip catchError go
 symbol :: String -> a -> ParseValue a
 symbol sym a = symbolFrom [(sym, a)]
 
--- | Parse a symbol from a given table.
+-- | Parse a symbol from a given table. The parser @symbolFrom tbl@ succeeds if `stringlike` returns @sym@ and @sym@ is found in the table.
 symbolFrom :: [(String, a)] -> ParseValue a
-symbolFrom tbl = parseValue >>= go
+symbolFrom tbl = stringlike >>= lookStr
   where
     err = intercalate ", " . fmap fst $ tbl
     lookStr x = case lookup x tbl of
       Just a  -> pure a
       Nothing -> throwExpectGot err x
-    go x = case x of
-      MetaString s  -> lookStr s
-      MetaInlines s -> lookStr (stringify s)
-      MetaBlocks s  -> lookStr (stringify s)
-      z             -> throwTypeError err z
 
 -- | Parse a @MetaMap@. You most likely want to use functions like `object`, `objectWith`, or `field` instead of this function.
 metaMap :: ParseValue (Map String MetaValue)
