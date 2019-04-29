@@ -373,7 +373,7 @@ field = flip fieldWith parseValue
 -- | Parse the value of a field if it is set and return @Just@ the result.
 -- Otherwise return @Nothing@.
 --
--- > maybeField k = fieldWith k parseValue
+-- > maybeField k = maybeFieldWith k parseValue
 maybeField :: FromValue a => String -> ParseObject (Maybe a)
 maybeField = flip maybeFieldWith parseValue
 
