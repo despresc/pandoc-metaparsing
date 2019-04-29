@@ -92,7 +92,7 @@ import qualified Data.Map as Map
 -- > instance FromValue Author where
 -- >   parseValue = objectWith $ Author <$> field "name" <*> field "location"
 --
--- Then @`parseMetaWith` (`field` "authors")@ will give a function @Meta -> Result [Author]@.
+-- Then @`parseMetaWith` (`field` "authors")@ will give a function @`Meta` -> `Result` [Author]@.
 --
 -- There are other possibilities: you can work solely with `FromObject` and write
 --
