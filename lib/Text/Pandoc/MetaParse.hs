@@ -38,6 +38,9 @@ module Text.Pandoc.MetaParse
   -- * Parsing @MetaObject@ and @MetaValue@ values
   -- ** @MetaObject@ parsers
   , FromObject(..)
+  -- ** Field parsers
+  -- $field
+
   , (.!)
   , (.?)
   , field
@@ -148,7 +151,9 @@ import           Text.Pandoc.Shared   (stringify)
 data MetaError
   = MetaExpectGotError String String -- ^ Expected @x@, got @y@
   | MetaExpectError String           -- ^ Expected @x@
-  | MetaOtherError String            -- ^ Other errors
+  | MetaFieldError String MetaError  -- ^ In field @k@, had error @e@.
+  | MetaFieldNotPresent
+  | MetaSomeError String             -- ^ Other errors
   deriving (Eq, Ord, Show)
 
 -- | Show the branch of the argument. Used for type errors.
@@ -209,7 +214,7 @@ instance MonadError MetaError Result where
   catchError (Error e) f     = f e
 
 instance Fail.MonadFail Result where
-  fail = throwError . MetaOtherError
+  fail = throwError . MetaSomeError
 
 instance Alternative Result where
   empty = Fail.fail "empty"
@@ -273,8 +278,12 @@ liftResult = Parse . ReaderT
 infix 0 <?>
 
 -- | With @act \<?\> e@, catch a @MetaError@ from @act@, replacing a
--- @MetaExpectGotError _ g@ with @MetaExpectGotError e g@ and replacing any other
--- error with @MetaExpectError e@.
+-- @MetaExpectGotError _ g@ with @MetaExpectGotError e g@, and replacing the
+-- error inside a @MetaFieldError k@ and any other error with @MetaExpectError
+-- e@.
+--
+-- > throwError (MetaExpectGotError x g) <?> y = throwError (MetaExpectGotError y g) TODO: Fix all of this mess.
+-- > throwError (MetaExpectGotError x g) <?> y = throwError (MetaExpectGotError y g)
 (<?>) :: MonadError MetaError m => m a -> String -> m a
 (<?>) = flip expect
 
@@ -283,6 +292,7 @@ expect :: MonadError MetaError m => String -> m a -> m a
 expect e = flip catchError go
   where
     go (MetaExpectGotError _ g) = throwExpectGot e g
+    go (MetaFieldError k _)     = throwError $ MetaFieldError k (MetaExpectError e)
     go _                        = throwExpect e
 
 
@@ -383,6 +393,13 @@ object act = metaMap >>= embedResult . runParse act . MetaObject
 fromObject :: FromObject a => ParseValue a
 fromObject = object parseObject
 
+-- $field
+-- The various infix field parser functions have a lot @infixr@ precedence so they may be chained.
+--
+-- Note that all of these functions wrap thrown errors during the parsing of a
+-- field @k@ in @MetaErrorField k@. The ones that expect a field to be present
+-- throw a @MetaErrorField k MetaFieldNotPresent@ error if it is not.
+
 infixr 2 .?
 
 -- | Run a @MetaValue@ parser on a field if it is present, returning @Just@ the
@@ -398,19 +415,20 @@ infixr 2 .!
 -- | Run a @MetaValue@ parser on a field, throwing an error if it is not
 -- present.
 (.!) :: String -> ParseValue a -> ParseObject a
-k .! act = k .? act >>= go
+k .! act = (k .? act) `catchError` wraperr >>= go
   where
-    go Nothing  = throwExpect $ "the field " <> k <> " to be set"
+    go Nothing  = throwError $ MetaFieldError k MetaFieldNotPresent
     go (Just a) = pure a
+    wraperr e = throwError $ MetaFieldError k e
 
--- | Parse the value of a field, throwing an error if the key is not set.
+-- | Parse the value of a field, throwing an error if it is not present.
 --
 -- > field k = k .! parseValue
 field :: FromValue a => String -> ParseObject a
 field = flip (.!) parseValue
 
--- | Parse the value of a field if it is set and return @Just@ the result.
--- Otherwise return @Nothing@.
+-- | Parse the value of a field if it is present, returning @Just@ the result,
+-- and returning @Nothing@ if it is not present.
 --
 -- > maybeField k = k .? parseValue
 maybeField :: FromValue a => String -> ParseObject (Maybe a)
