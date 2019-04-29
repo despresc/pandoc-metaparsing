@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 
 module Text.Pandoc.MetaParse where
 
@@ -48,17 +49,37 @@ throwExpect :: MonadError MetaError m => String -> m a
 throwExpect = throwError . MetaExpectError
 
 -- | The result of a parse.
-newtype Result a = Result
-  { runResult :: Either MetaError a
-  } deriving (Show, Functor, Applicative, Monad, MonadError MetaError)
+data Result a
+  = Error MetaError
+  | Success a
+  deriving Show
+
+instance Functor Result where
+  fmap _ (Error e)   = Error e
+  fmap f (Success x) = Success (f x)
+
+instance Applicative Result where
+  pure = Success
+  Error e <*> _   = Error e
+  Success f <*> g = fmap f g
+
+instance Monad Result where
+  return = pure
+  Error e >>= _   = Error e
+  Success f >>= k = k f
+
+instance MonadError MetaError Result where
+  throwError = Error
+  catchError z@(Success _) _ = z
+  catchError (Error e) f     = f e
 
 instance Fail.MonadFail Result where
   fail = throwError . MetaOtherError
 
 instance Alternative Result where
   empty = Fail.fail "empty"
-  Result (Right x) <|> Result _ = Result (Right x)
-  Result _         <|> Result x = Result x
+  z@(Success _) <|> _ = z
+  Error _       <|> x = x
 
 instance MonadPlus Result where
 
@@ -67,18 +88,21 @@ newtype Parse i a = Parse
   { unParse :: ReaderT i Result a
   } deriving (Functor, Applicative, Monad, Alternative, MonadPlus, MonadReader i, MonadError MetaError)
 
-runParse :: Parse i a -> i -> Either MetaError a
-runParse act = runResult . runReaderT (unParse act)
+runParse :: Parse i a -> i -> Result a
+runParse = runReaderT . unParse
 
-embedResult :: MonadError MetaError m => Result a -> m a
-embedResult = liftEither . runResult
+runParseValue :: FromMetaValue a => MetaValue -> Result a
+runParseValue = runParse parseValue
 
-liftResult :: (MonadError MetaError m, MonadReader i m) => (i -> Result a) -> m a
-liftResult f = ask >>= embedResult . f
+embedResult :: Result a -> Parse i a
+embedResult = Parse . ReaderT . const
+
+liftResult :: (i -> Result a) -> Parse i a
+liftResult = Parse . ReaderT
 
 -- | With @expect e@, catch a @MetaError@, replacing the expected string with @e@.
 expect :: MonadError MetaError m => String -> m a -> m a
-expect e act = act `catchError` go
+expect e = flip catchError go
   where
     go (MetaExpectGotError _ g) = throwExpectGot e g
     go _                        = throwExpect e
@@ -95,7 +119,7 @@ symbol sym a = symbolFrom [(sym, a)]
 
 -- | Expect a symbol from a given table.
 symbolFrom :: [(String, a)] -> Parse MetaValue a
-symbolFrom tbl = val >>= go
+symbolFrom tbl = parseValue >>= go
   where
     err = intercalate ", " . fmap fst $ tbl
     lookStr x = case lookup x tbl of
@@ -152,7 +176,7 @@ bool = liftResult go
 
 -- | Run a @ParseMeta@, expecting a @MetaMap@. Used for interacting with @MetaMap@.
 onMeta :: Parse Meta a -> Parse MetaValue a
-onMeta act = metaMap >>= liftEither . runParse act . Meta
+onMeta act = metaMap >>= embedResult . runParse act . Meta
 
 -- | Read a value from a key, throwing an error if the key is not set.
 key :: FromMetaValue a => String -> Parse Meta a
@@ -165,7 +189,6 @@ key k = keyMaybe k >>= go
 keyMaybe :: FromMetaValue a => String -> Parse Meta (Maybe a)
 keyMaybe k = ask >>= traverse fromValue . lookupMeta k
 
-
 -- | Things that can be read from meta values.
 class FromMetaValue a where
   parseValue :: Parse MetaValue a
@@ -173,13 +196,9 @@ class FromMetaValue a where
 
   parseListValue = list >>= traverse fromValue
 
--- | Get the current parsed @MetaValue@.
-val :: (MonadReader MetaValue m, MonadError MetaError m, FromMetaValue a) => m a
-val = liftResult fromValue
-
 -- | Parse a meta value.
-fromValue :: (MonadError MetaError m, FromMetaValue a) => MetaValue -> m a
-fromValue v = liftEither $ runParse parseValue v
+fromValue :: FromMetaValue a => MetaValue -> Parse i a
+fromValue = embedResult . runParseValue
 
 instance FromMetaValue a => FromMetaValue [a] where
   parseValue = parseListValue
