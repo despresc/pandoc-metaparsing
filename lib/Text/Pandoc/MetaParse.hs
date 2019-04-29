@@ -297,7 +297,7 @@ metaMap = liftResult go
       MetaMap m -> pure m
       z         -> throwTypeError "Map" z
 
--- | Parse something other than a list or map and stringify it.
+-- | Parse something other than a list or map and `stringify` it.
 stringified :: ParseValue String
 stringified = liftResult go
   where
