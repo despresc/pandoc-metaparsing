@@ -78,7 +78,7 @@ import           Text.Pandoc.Shared   (stringify)
 import qualified Data.Map as Map
 
 -- $use
--- As an introductory example, suppose you expect the @authors@ field of your document's `Meta` to consist of a list of @{ name: [Inline]; location: [Inline]}@ entries.
+-- Suppose you expect the @authors@ field of your document's `Meta` to consist of a list of @{ name: [Inline]; location: [Inline]}@ entries.
 -- You can create the type
 --
 -- > data Author = Author
