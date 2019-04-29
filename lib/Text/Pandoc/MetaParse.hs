@@ -94,7 +94,7 @@ import qualified Data.Map as Map
 --
 -- Then @`parseMetaWith` (`field` "authors")@ will give a function @Meta -> Result [Author]@.
 --
--- There are other possibilities; one can work solely with `FromObject` and write
+-- There are other possibilities; you can work solely with `FromObject` and write
 --
 -- > instance FromObject Author where
 -- >   parseObject = Author <$> field "name" <*> field "location"
@@ -103,8 +103,8 @@ import qualified Data.Map as Map
 -- >   parseObject = field "authors"
 --
 -- and have `parseMeta` give you the same function @`Meta` -> `Result` [Author]@.
--- Or one can mix instances of both `FromValue` and `FromObject`, or use
--- neither and simply write the parser one needs directly.
+-- Or you can mix instances of both `FromValue` and `FromObject`, or use
+-- neither and simply write the parser you need directly.
 
 -- $metaparse
 -- In this library we think of the @Map String MetaValue@ in a @MetaMap@ as
