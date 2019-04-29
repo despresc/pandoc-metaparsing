@@ -4,17 +4,42 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 
-
 {-|
 Module      : Text.Pandoc.MetaParse
 Copyright   : (C) 2019 Christian Despres
 License     : MIT
 Stability   : experimental
 
-Types and instances for the container types.
+Simple parsing of Pandoc `Meta` metadata.
 -}
 
-module Text.Pandoc.MetaParse where
+module Text.Pandoc.MetaParse
+  ( Parse
+  , Result(..)
+  -- * Things that can be parsed from a @MetaValue@
+  , FromMetaValue(..)
+  -- ** Functions for writing @MetaValue@ parsers
+  , symbol
+  , symbolFrom
+  , stringlike
+  , weakString
+  , weakInlines
+  , weakBlocks
+  -- ** Functions for writing @Meta@ parsers
+  , onMeta
+  , key
+  , keyMaybe
+  -- * Errors
+  -- ** Type of errors
+  , MetaError(..)
+  -- ** Modifying thrown errors
+  , (<?>)
+  , expect
+  -- ** Throwing errors
+  , throwTypeError
+  , throwExpectGot
+  , throwExpect
+  ) where
 
 import           Control.Applicative
 import           Control.Monad.Except
@@ -25,9 +50,8 @@ import           Data.Map             (Map)
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
 import           Text.Pandoc
+import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 import           Text.Pandoc.Shared   (stringify)
-
--- * Simple parsing of Pandoc `Meta` metadata.
 
 -- | Possible errors during parsing
 data MetaError
@@ -46,16 +70,26 @@ showMetaValueType x = case x of
   MetaInlines _ -> "Inlines"
   MetaBlocks _  -> "Blocks"
 
--- | Throw a type error.
-throwTypeError :: MonadError MetaError m => String -> MetaValue -> m a
-throwTypeError s v = throwError $ MetaExpectGotError s (showMetaValueType v)
+-- | Throw a simple type error, printing the branch of the @MetaValue@ as what was received.
+--
+-- > throwTypeError s (MetaString x) = throwExpectGot s "String"
+throwTypeError :: MonadError MetaError m
+               => String -- ^ What was expected.
+               -> MetaValue -- ^ What was received
+               -> m a
+throwTypeError s = throwError . MetaExpectGotError s . showMetaValueType
 
--- | Throw an expectation error if we know what we got.
-throwExpectGot :: MonadError MetaError m => String -> String -> m a
+-- | Throw an expectation error if we can show what we received.
+throwExpectGot :: MonadError MetaError m
+               => String -- ^ What was expected.
+               -> String -- ^ What was received.
+               -> m a
 throwExpectGot e = throwError . MetaExpectGotError e
 
--- | Throw an expectation error if we don't know what we got.
-throwExpect :: MonadError MetaError m => String -> m a
+-- | Throw an expectation error if there is not a good way of showing what we received.
+throwExpect :: MonadError MetaError m
+            => String -- ^ What was expected.
+            -> m a
 throwExpect = throwError . MetaExpectError
 
 -- | The result of a parse.
@@ -114,20 +148,20 @@ embedResult = Parse . ReaderT . const
 liftResult :: (i -> Result a) -> Parse i a
 liftResult = Parse . ReaderT
 
--- | With @expect e@, catch a @MetaError@, replacing the expected string with @e@.
+infix 0 <?>
+
+-- | With @act \<?\> e@, catch a @MetaError@ from @act@, replacing a @MetaExpectGotError _ g@ with @MetaExpectGotError e g@ and replacing any other error with @MetaExpectError e@.
+(<?>) :: MonadError MetaError m => m a -> String -> m a
+(<?>) = flip expect
+
+-- | Flipped `<?>`.
 expect :: MonadError MetaError m => String -> m a -> m a
 expect e = flip catchError go
   where
     go (MetaExpectGotError _ g) = throwExpectGot e g
     go _                        = throwExpect e
 
-infix 0 <?>
-
--- | Flipped `expect` of low fixity.
-(<?>) :: MonadError MetaError m => m a -> String -> m a
-(<?>) = flip expect
-
--- | Expect a "symbol" - a string representing some internal type. The error handling could be better.
+-- | Expect a "symbol", a string representing an element of a Haskell type @a@. The parser @symbol sym x@ succeeds and returns @x@ if `stringlike` returns @sym@.
 symbol :: String -> a -> Parse MetaValue a
 symbol sym a = symbolFrom [(sym, a)]
 
@@ -145,7 +179,7 @@ symbolFrom tbl = parseValue >>= go
       MetaBlocks s  -> lookStr (stringify s)
       z             -> throwTypeError err z
 
--- | Expect something other than a list or map and stringify it.
+-- | Parse something other than a list or map and stringify it.
 stringlike :: Parse MetaValue String
 stringlike = liftResult go
   where
@@ -156,41 +190,37 @@ stringlike = liftResult go
       MetaBool b    -> pure $ if b then "true" else "false"
       z             -> throwTypeError "String-like " z
 
--- | Expect a `MetaString`. A type-restricted version of `parseValue`.
-string :: Parse MetaValue String
-string = liftResult go
+-- | A @String@ parser that only succeeds on @MetaString@.
+weakString :: Parse MetaValue String
+weakString = liftResult go
   where
     go x = case x of
       MetaString s -> pure s
+      MetaList l   -> traverse runParseValue l
       z            -> throwTypeError "String" z
 
--- | Expect a `MetaList`. A type-restricted version of `parseValue`.
-list :: Parse MetaValue [MetaValue]
-list = liftResult go
+-- | An @[Inline]@ parser that only succeeds on @MetaInlines@
+weakInlines :: Parse MetaValue [Inline]
+weakInlines = liftResult go
   where
     go x = case x of
-      MetaList s -> pure s
-      z          -> throwTypeError "List" z
+      MetaInlines s -> pure s
+      MetaList l   -> traverse runParseValue l
+      z             -> throwTypeError "Inlines" z
 
--- | Expect a `MetaMap`. A type-restricted version of `parseValue`. Try using @onMeta@ and functions like @key@ before using this.
-metaMap :: Parse MetaValue (Map String MetaValue)
-metaMap = liftResult go
+
+-- | A @[Block]@ parser that only succeeds on @MetaBlocks@.
+weakBlocks :: Parse MetaValue [Block]
+weakBlocks = liftResult go
   where
     go x = case x of
-      MetaMap m -> pure m
-      z         -> throwTypeError "Map" z
+      MetaBlocks s -> pure s
+      MetaList l   -> traverse runParseValue l
+      z            -> throwTypeError "Blocks" z
 
--- | Expect a `MetaBool`. A type-restricted version of `parseValue`.
-bool :: Parse MetaValue Bool
-bool = liftResult go
-  where
-    go x = case x of
-      MetaBool b -> pure b
-      z          -> throwTypeError "Bool" z
-
--- | Run a @ParseMeta@, expecting a @MetaMap@. Used for interacting with @MetaMap@.
+-- | Run a @Meta@ parser as a @MetaValue@ parser, expecting a @MetaMap@. Used for interacting with @MetaMap@.
 onMeta :: Parse Meta a -> Parse MetaValue a
-onMeta act = metaMap >>= embedResult . runParse act . Meta
+onMeta act = parseValue >>= embedResult . runParse act . Meta
 
 -- | Read a value from a key, throwing an error if the key is not set.
 key :: FromMetaValue a => String -> Parse Meta a
@@ -203,12 +233,26 @@ key k = keyMaybe k >>= go
 keyMaybe :: FromMetaValue a => String -> Parse Meta (Maybe a)
 keyMaybe k = ask >>= traverse fromValue . lookupMeta k
 
--- | Things that can be read from meta values.
+-- | Things that can be read from a @MetaValue@.
+--
+-- We include @parseListValue@ so we can have sensible results when parsing
+-- @String@, @MetaInlines@, and @MetaBlocks@.
+--
+-- Note that we parse a @MetaValue@ as a @String@, @[Inline]@, or @[Block]@
+-- /only when/ it is a @MetaString@, @MetaInlines@, or @MetaBlocks@,
+-- respectively. This remark applies to the parsing of @Inlines@, @Blocks@, and
+-- @Text@.If you also want a @MetaList@ to parse as one of these if all of its
+-- entries parse as either @Char@, @Inline@, or @Block@, then use `weakString`,
+-- `weakInlines`, or `weakBlocks`.
 class FromMetaValue a where
   parseValue :: Parse MetaValue a
-  parseListValue :: Parse MetaValue [a] -- ^ So we can have a sensible result when parsing a String
+  parseListValue :: Parse MetaValue [a]
 
-  parseListValue = list >>= traverse fromValue
+  parseListValue = liftResult go >>= traverse fromValue
+    where
+      go x = case x of
+        MetaList s -> pure s
+        z          -> throwTypeError "List" z
 
 -- | Parse a meta value.
 fromValue :: FromMetaValue a => MetaValue -> Parse i a
@@ -221,20 +265,73 @@ instance FromMetaValue MetaValue where
   parseValue = ask
 
 instance FromMetaValue Bool where
-  parseValue = bool
+  parseValue = liftResult go
+    where
+      go x = case x of
+        MetaBool b -> pure b
+        z          -> throwTypeError "Bool" z
 
--- | Expect a string, parse it as @Text@.
+-- | Expect a @MetaString@, parse it as @Text@.
 instance FromMetaValue Text where
   parseValue = Text.pack <$> parseValue <?> "text"
 
--- | Important: We don't consider a MetaList of singleton MetaStrings to be a @String@.
+-- | Parse @MetaString [x]@ as @Char@ and @MetaString s@ as @String@
 instance FromMetaValue Char where
   parseValue = liftResult go
     where
       go (MetaString [x]) = pure x
-      go (MetaString _)   = throwExpect "a string of length 1"
-      go z                = throwTypeError "a character" z
-  parseListValue = string
+      go (MetaString _)   = throwExpect "String of length 1"
+      go z                = throwTypeError "Char" z
+  parseListValue = liftResult go
+    where
+      go x = case x of
+        MetaString s -> pure s
+        z            -> throwTypeError "String" z
 
+-- | Wrap a @MetaMap@ in @Meta@. Try using `onMeta` and functions like `key` before using this.
 instance FromMetaValue Meta where
   parseValue = onMeta ask
+
+-- | Try using `onMeta` and functions like `key` before using this.
+instance FromMetaValue (Map String MetaValue) where
+  parseValue = liftResult go
+    where
+      go x = case x of
+        MetaMap m -> pure m
+        z         -> throwTypeError "Map" z
+
+-- | Parse @MetaInlines [x]@ as @Inline@ and @MetaInlines s@ as @[Inline]@
+instance FromMetaValue Inline where
+  parseValue = liftResult go
+    where
+      go x = case x of
+        MetaInlines [y] -> pure y
+        MetaInlines _   -> throwExpect "Inlines of length 1"
+        z               -> throwTypeError "Inline" z
+  parseListValue = liftResult go
+    where
+      go x = case x of
+        MetaInlines y -> pure y
+        z             -> throwTypeError "Inlines" z
+
+-- | Parse @MetaBlocks [x]@ as @Block@ and @MetaBlocks s@ as @[Block]@
+instance FromMetaValue Block where
+  parseValue = liftResult go
+   where
+     go x = case x of
+       MetaBlocks [y] -> pure y
+       MetaBlocks _   -> throwExpect "Blocks of length 1"
+       z              -> throwTypeError "Block" z
+  parseListValue = liftResult go
+    where
+      go x = case x of
+        MetaBlocks y -> pure y
+        z            -> throwTypeError "Blocks" z
+
+-- | Parse @MetaInlines@ as @Inlines@
+instance FromMetaValue Inlines where
+  parseValue = fromList <$> parseValue
+
+-- | Parse @MetaBlocks@ as @Blocks@
+instance FromMetaValue Blocks where
+  parseValue = fromList <$> parseValue
