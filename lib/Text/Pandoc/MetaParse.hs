@@ -233,7 +233,7 @@ key k = keyMaybe k >>= go
 keyMaybe :: FromMetaValue a => String -> Parse Meta (Maybe a)
 keyMaybe k = ask >>= traverse fromValue . lookupMeta k
 
--- | Things that can be read from a @MetaValue@.
+-- | Things that can be converted from a @MetaValue@.
 --
 -- We include @parseListValue@ so we can have sensible results when parsing
 -- @String@, @MetaInlines@, and @MetaBlocks@.
@@ -254,7 +254,7 @@ class FromMetaValue a where
         MetaList s -> pure s
         z          -> throwTypeError "List" z
 
--- | Parse a meta value.
+-- | Parse a @MetaValue@ in the @Parse i@ monad.
 fromValue :: FromMetaValue a => MetaValue -> Parse i a
 fromValue = embedResult . runParseValue
 
@@ -271,7 +271,7 @@ instance FromMetaValue Bool where
         MetaBool b -> pure b
         z          -> throwTypeError "Bool" z
 
--- | Expect a @MetaString@, parse it as @Text@.
+-- | Parse @MetaString@ as @Text@.
 instance FromMetaValue Text where
   parseValue = Text.pack <$> parseValue <?> "text"
 
