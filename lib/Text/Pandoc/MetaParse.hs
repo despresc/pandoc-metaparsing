@@ -45,7 +45,7 @@ module Text.Pandoc.MetaParse
   , (.?)
   , field
   , maybeField
-  , (.!=)
+  , (.?!)
   -- ** @MetaValue@ parsers
   , FromValue(..)
   , object
@@ -130,20 +130,25 @@ import           Text.Pandoc.Shared   (stringify)
 --   * In the other direction, we have the functions `object` and `fromObject` that parse the input `MetaValue` using `ParseObject` parsers.
 
 -- $complicate
--- If we have a field @prefix@ that can be @no-prefix@, @{ with-prefix: string }@, or be absent (with defailt @no-prefix@) then we can parse this directly (and somewhat confusingly) with
+-- If we have a field @prefix@ that can be @no-prefix@, @{ with-prefix: string
+-- }@, or be absent (with defailt @no-prefix@) then we can parse this directly
+-- (and somewhat confusingly) with
 --
 -- > data Prefix = WithPrefix String | NoPrefix
 -- >
 -- > p :: ParseObject Prefix
--- > p = "prefix" .? symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") .=! NoPrefix <?> "prefix: no-prefix or prefix: { with-prefix: string }"
+-- > p = maybeF NoPrefix $ "prefix" .? symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") <?> "prefix: no-prefix or prefix: { with-prefix: string }"
 --
 -- or create instances
 --
 -- > instance FromValue Prefix where
--- >   parseValue = symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") <?> "no-prefix or { with-prefix: string }"
+-- >   parseValue = pNo <|> pWith <?> "no-prefix or { with-prefix: string }"
+-- >     where
+-- >       pNo   = symbol "no-prefix" NoPrefix
+-- >       pWith = object $ WithPrefix <$> field "with-prefix"
 -- >
 -- > instance FromObject Prefix where
--- >  parseObject = maybeField "prefix" .=! NoPrefix
+-- >  parseObject = "prefix" .?! NoPrefix
 --
 -- and have @parseMeta :: Meta -> Result Prefix@.
 
@@ -275,15 +280,24 @@ embedResult = Parse . ReaderT . const
 liftResult :: (i -> Result a) -> Parse i a
 liftResult = Parse . ReaderT
 
-infix 0 <?>
+infixl 2 <?>
 
--- | With @act \<?\> e@, catch a @MetaError@ from @act@, replacing a
--- @MetaExpectGotError _ g@ with @MetaExpectGotError e g@, and replacing the
--- error inside a @MetaFieldError k@ and any other error with @MetaExpectError
--- e@.
+-- | In @act \<?\> s@, bluntly modify errors thrown from @act@ by replacing the
+-- expectation string in an error with @e@, keeping the received string. In detail,
+-- we have
 --
--- > throwError (MetaExpectGotError x g) <?> y = throwError (MetaExpectGotError y g) TODO: Fix all of this mess.
--- > throwError (MetaExpectGotError x g) <?> y = throwError (MetaExpectGotError y g)
+-- > throwError (MetaExpectGotError _ y) <?> x = throwError (MetaExpectGotError x y)
+-- > throwError _                        <?> x = throwError (MetaExpectError x)
+--
+-- This should work out how you would expect when used with @\<|\>@ and functions like `.?` and `.!`, since we have
+--
+-- > "key" .! p <?> "expect" = "key" .! (p <?> "expect")
+--
+-- and
+--
+-- > p <|> q <?> "expect" = (p <|> q) <?> "expect"
+--
+-- so key errors will be preserved, but errors from chained `MetaValue` parsers will be overwritten.
 (<?>) :: MonadError MetaError m => m a -> String -> m a
 (<?>) = flip expect
 
@@ -298,7 +312,7 @@ expect e = flip catchError go
 
 -- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@.
 charLike :: ParseValue Char
-charLike = symbolLike >>= go <?> "Char"
+charLike = (symbolLike >>= go) <?> "Char"
   where
     go [x] = pure x
     go _   = empty
@@ -384,8 +398,7 @@ weakBlocks = liftResult go
       z            -> throwTypeError "Blocks" z
 
 -- | Run a @MetaObject@ parser as a @MetaValue@ parser, throwing an error if the
--- @MetaValue@ is not a @MetaMap@. One main link between the `ParseObject` and
--- `ParseValue` parsers (the others being the various @field@ functions).
+-- @MetaValue@ is not a @MetaMap@.
 object :: ParseObject a -> ParseValue a
 object act = metaMap >>= embedResult . runParse act . MetaObject
 
@@ -394,32 +407,32 @@ fromObject :: FromObject a => ParseValue a
 fromObject = object parseObject
 
 -- $field
--- The various infix field parser functions have a lot @infixr@ precedence so they may be chained.
+-- The various infix field parser functions have a low @infixr@ precedence so they may be chained.
 --
 -- Note that all of these functions wrap thrown errors during the parsing of a
 -- field @k@ in @MetaErrorField k@. The ones that expect a field to be present
 -- throw a @MetaErrorField k MetaFieldNotPresent@ error if it is not.
 
-infixr 2 .?
+infixr 1 .?
 
 -- | Run a @MetaValue@ parser on a field if it is present, returning @Just@ the
 -- result, and returning @Nothing@ if it is not present.
 (.?) :: String -> ParseValue a -> ParseObject (Maybe a)
-k .? act = ask >>= go . lookupMetaObject k
+k .? act = (ask >>= go . lookupMetaObject k) `catchError` wraperr
   where
     go Nothing  = pure Nothing
     go (Just x) = fmap Just . embedResult $ runParse act x
+    wraperr e = throwError $ MetaFieldError k e
 
-infixr 2 .!
+infixr 1 .!
 
 -- | Run a @MetaValue@ parser on a field, throwing an error if it is not
 -- present.
 (.!) :: String -> ParseValue a -> ParseObject a
-k .! act = (k .? act) `catchError` wraperr >>= go
+k .! act = (k .? act) >>= go
   where
     go Nothing  = throwError $ MetaFieldError k MetaFieldNotPresent
     go (Just a) = pure a
-    wraperr e = throwError $ MetaFieldError k e
 
 -- | Parse the value of a field, throwing an error if it is not present.
 --
@@ -434,12 +447,19 @@ field = flip (.!) parseValue
 maybeField :: FromValue a => String -> ParseObject (Maybe a)
 maybeField = flip (.?) parseValue
 
-infix 1 .!=
+-- | Parse the value of a field if it is present, returning @Just@ the result,
+-- and returning the supplied default if it is not present.
+(.?!) :: FromValue a => String -> a -> ParseObject a
+k .?! x = maybeF x $ maybeField k
 
--- | Give a default value to a parser returning @Maybe a@. Useful for parsing
--- optional fields with `maybeField`.
-(.!=) :: Functor f => f (Maybe a) -> a -> f a
-(.!=) = flip $ fmap . fromMaybe
+-- | Give a default value to a parser returning @Maybe a@.
+maybeF :: Functor f => a -> f (Maybe a) -> f a
+maybeF = fmap . fromMaybe
+
+-- -- | Give a default value to a parser returning @Maybe a@. Useful for parsing
+-- -- optional fields with `maybeField`. 
+-- (.?=) :: Functor f => f (Maybe a) -> a -> f a
+-- (.?=) = flip $ fmap . fromMaybe
 
 -- | Things that can be read from a @MetaObject@.
 class FromObject a where
