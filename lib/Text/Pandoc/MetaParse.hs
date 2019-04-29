@@ -10,7 +10,7 @@ Copyright   : (C) 2019 Christian Despres
 License     : MIT
 Stability   : experimental
 
-Simple parsing of Pandoc `Meta` metadata in the style of the Aeson library.
+Simple parsing of Pandoc `Meta` metadata inspired by the Aeson library.
 -}
 
 module Text.Pandoc.MetaParse
@@ -38,10 +38,10 @@ module Text.Pandoc.MetaParse
   -- * Parsing @MetaObject@ and @MetaValue@ values
   -- ** @MetaObject@ parsers
   , FromObject(..)
+  , (.!)
+  , (.?)
   , field
-  , fromField
   , maybeField
-  , fromMaybeField
   , (.!=)
   -- ** @MetaValue@ parsers
   , FromValue(..)
@@ -71,18 +71,18 @@ module Text.Pandoc.MetaParse
   ) where
 
 import           Control.Applicative
-import Data.Maybe (fromMaybe)
 import           Control.Monad.Except
 import qualified Control.Monad.Fail   as Fail
 import           Control.Monad.Reader
 import           Data.List            (intercalate)
 import           Data.Map             (Map)
+import qualified Data.Map             as Map
+import           Data.Maybe           (fromMaybe)
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
 import           Text.Pandoc
 import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 import           Text.Pandoc.Shared   (stringify)
-import qualified Data.Map as Map
 
 -- $use
 -- Suppose you expect the @authors@ field of your document's `Meta` to consist of a list of @{ name: [Inline]; location: [Inline]}@ entries.
@@ -122,25 +122,25 @@ import qualified Data.Map as Map
 --
 -- The `ParseObject` and `ParseValue` monads are linked by two families of functions.
 --
---   * In one direction, we have functions like `field` and `fromField` that parse the fields of the input `MetaObject` using `ParseValue` parsers.
+--   * In one direction, we have functions like `.!` and `field` that parse the fields of the input `MetaObject` using `ParseValue` parsers.
 --
 --   * In the other direction, we have the functions `object` and `fromObject` that parse the input `MetaValue` using `ParseObject` parsers.
 
 -- $complicate
--- If we have a field @prefix@ that can be @no-prefix@, @{ with-prefix: string }@, or be absent (with defailt @no-prefix@) then we can parse this directly with
+-- If we have a field @prefix@ that can be @no-prefix@, @{ with-prefix: string }@, or be absent (with defailt @no-prefix@) then we can parse this directly (and somewhat confusingly) with
 --
 -- > data Prefix = WithPrefix String | NoPrefix
 -- >
 -- > p :: ParseObject Prefix
--- > p = field "prefix" $ symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> fromField "with-prefix")
+-- > p = "prefix" .? symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") .=! NoPrefix <?> "prefix: no-prefix or prefix: { with-prefix: string }"
 --
 -- or create instances
 --
 -- > instance FromValue Prefix where
--- >   parseValue = symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> fromField "with-prefix")
+-- >   parseValue = symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") <?> "no-prefix or { with-prefix: string }"
 -- >
 -- > instance FromObject Prefix where
--- >  parseObject = fromMaybeField "prefix" .=! NoPrefix
+-- >  parseObject = maybeField "prefix" .=! NoPrefix
 --
 -- and have @parseMeta :: Meta -> Result Prefix@.
 
@@ -298,9 +298,9 @@ symbolLike :: ParseValue String
 symbolLike = liftResult go
   where
     go x = case x of
-      MetaString s -> pure s
+      MetaString s        -> pure s
       MetaInlines [Str s] -> pure s
-      z -> throwTypeError "symbol" z
+      z                   -> throwTypeError "symbol" z
 
 -- | Parse a "symbol", a string representing an element of a Haskell type @a@.
 -- The parser @symbol sym x@ succeeds and returns @x@ if `symbolLike` returns @sym@.
@@ -323,7 +323,7 @@ symbolFrom tbl = symbolLike >>= lookStr
       Just a  -> pure a
       Nothing -> throwExpectGot err x
 
--- | Parse a @MetaMap@. You most likely want to use functions like `object`, `fromObject`, and `field` instead of this function.
+-- | Parse a @MetaMap@. You most likely want to use functions like `object`, `fromObject`, and `.!` instead of this function.
 metaMap :: ParseValue (Map String MetaValue)
 metaMap = liftResult go
   where
@@ -383,38 +383,43 @@ object act = metaMap >>= embedResult . runParse act . MetaObject
 fromObject :: FromObject a => ParseValue a
 fromObject = object parseObject
 
--- | Run a @MetaValue@ parser on the value of a key if it is set, returning
--- @Just a@ if the key was set and @Nothing@ if it was not.
-maybeField :: String -> ParseValue a -> ParseObject (Maybe a)
-maybeField k act = ask >>= go . lookupMetaObject k
+infixr 2 .?
+
+-- | Run a @MetaValue@ parser on a field if it is present, returning @Just@ the
+-- result, and returning @Nothing@ if it is not present.
+(.?) :: String -> ParseValue a -> ParseObject (Maybe a)
+k .? act = ask >>= go . lookupMetaObject k
   where
     go Nothing  = pure Nothing
     go (Just x) = fmap Just . embedResult $ runParse act x
 
--- | Run a @MetaValue@ parser on a key, throwing an error if the key is not set.
-field :: String -> ParseValue a -> ParseObject a
-field k act = maybeField k act >>= go
+infixr 2 .!
+
+-- | Run a @MetaValue@ parser on a field, throwing an error if it is not
+-- present.
+(.!) :: String -> ParseValue a -> ParseObject a
+k .! act = k .? act >>= go
   where
-    go Nothing  = throwExpect $ "the key " <> k <> " to be set"
+    go Nothing  = throwExpect $ "the field " <> k <> " to be set"
     go (Just a) = pure a
 
 -- | Parse the value of a field, throwing an error if the key is not set.
 --
--- > fromField k = field k parseValue
-fromField :: FromValue a => String -> ParseObject a
-fromField = flip field parseValue
+-- > field k = k .! parseValue
+field :: FromValue a => String -> ParseObject a
+field = flip (.!) parseValue
 
 -- | Parse the value of a field if it is set and return @Just@ the result.
 -- Otherwise return @Nothing@.
 --
--- > fromMaybeField k = maybeField k parseValue
-fromMaybeField :: FromValue a => String -> ParseObject (Maybe a)
-fromMaybeField = flip maybeField parseValue
+-- > maybeField k = k .? parseValue
+maybeField :: FromValue a => String -> ParseObject (Maybe a)
+maybeField = flip (.?) parseValue
 
 infix 1 .!=
 
 -- | Give a default value to a parser returning @Maybe a@. Useful for parsing
--- optional fields with `fromMaybeField`.
+-- optional fields with `maybeField`.
 (.!=) :: Functor f => f (Maybe a) -> a -> f a
 (.!=) = flip $ fmap . fromMaybe
 
