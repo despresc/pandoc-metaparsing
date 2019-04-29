@@ -382,9 +382,9 @@ class FromObject a where
 -- entries parse as either @Char@, @Inline@, or @Block@, then use `weakString`,
 -- `weakInlines`, or `weakBlocks`.
 --
--- No @Map String MetaValue@ instance is given. Use the functions `object` and
--- `objectWith` instead, using `metaMap` if you are sure you need to parse a
--- @Map String MetaValue@.
+-- No @Map String MetaValue@ or @MetaObject@ instance is given. Use functions
+-- like `object`, `objectWith`, and `field` instead. Use `metaMap` if you are
+-- sure you need to parse a @Map String MetaValue@.
 class FromValue a where
   parseValue :: ParseValue a
   parseListValue :: ParseValue [a]
