@@ -113,4 +113,5 @@ given that also succeeds in this case. Similar remarks apply to the `Inline` and
 
 All of this does mean that our class `FromValue` is somewhat incompatible with
 the Pandoc class `ToMetaValue` in that `Char`, `Inline`, and `Block` cannot be
-made instances of the latter class and satisfy
+made instances of the latter class while keeping the `runParseValue .
+toMetaValue = pure` behaviour.
