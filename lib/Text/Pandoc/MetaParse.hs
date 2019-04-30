@@ -412,7 +412,7 @@ withObjectName s = flip catchError go
   where
     go = throwError . MetaWhenParseError s
 
--- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@.
+-- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@. Can be used like `symbolLike` is used in `symbol`.
 charLike :: ParseValue Char
 charLike = (symbolLike >>= go) <?> "Char"
   where
