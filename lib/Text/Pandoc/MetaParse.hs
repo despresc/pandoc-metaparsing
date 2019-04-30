@@ -103,6 +103,8 @@ import           Text.Pandoc
 import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 import           Text.Pandoc.Shared   (stringify)
 
+-- TODO: Go through documentation and fix it up! Make sure the examples make sense, esp. with the new error system!
+
 -- $use
 -- Suppose you expect the @authors@ field of your document's `Meta` to consist of a list of @{ name: [Inline]; location: [Inline]}@ entries.
 -- You can create the type
@@ -192,7 +194,7 @@ data MetaError
   = MetaExpectGotError Expectation (Maybe String) -- ^ Expected: @x@, got: @Just s@ if something was present, otherwise @Nothing@.
   | MetaFieldUnknown String          -- ^ Unknown field @k@.
   | MetaSomeError String             -- ^ Some error, printed verbatim by `simpleErrorShow`
-  | MetaFieldError String MetaError  -- ^ Got error @e@ when parsing field @k@
+  | MetaWhenParseError String MetaError  -- ^ Got error @e@ when parsing @k@
   | MetaNullError                    -- ^ Thrown by `empty`
   deriving (Eq, Ord, Show)
 
@@ -209,8 +211,8 @@ instance Semigroup MetaError where
       go _ (MetaFieldUnknown s) = MetaFieldUnknown s
       go (MetaSomeError s) _ = MetaSomeError s
       go _ (MetaSomeError s) = MetaSomeError s
-      go (MetaFieldError k e) _ = MetaFieldError k e
-      go _ (MetaFieldError k e) = MetaFieldError k e
+      go (MetaWhenParseError k e) _ = MetaWhenParseError k e
+      go _ (MetaWhenParseError k e) = MetaWhenParseError k e
       go MetaNullError MetaNullError = MetaNullError
 
 instance Monoid MetaError where
@@ -235,7 +237,7 @@ simpleErrorShow x = case x of
   MetaExpectGotError e m -> "Expecting: " <> showExp e <> "\n" <> fromM m
   MetaFieldUnknown f     -> "Unknown field " <> f
   MetaSomeError e        -> e
-  MetaFieldError k e     -> simpleErrorShow e <> "\nwhen parsing field " <> k
+  MetaWhenParseError k e     -> simpleErrorShow e <> "\nwhen parsing " <> k
   MetaNullError          -> "Unknown error"
   where
     showExp = intercalate ", " . expectationToList
@@ -523,7 +525,7 @@ k .? act = (inspect >>= go . lookupMetaObject k) `catchError` wraperr
   where
     go Nothing  = pure Nothing
     go (Just x) = fmap Just . embedResult $ runParse act x
-    wraperr e = throwError $ MetaFieldError k e
+    wraperr e = throwError $ MetaWhenParseError ("field " <> k) e
 
 infixr 1 .!
 
