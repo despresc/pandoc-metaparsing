@@ -71,7 +71,8 @@ module Text.Pandoc.MetaParse
   , weakString
   , weakInlines
   , weakBlocks
-  -- ** Embedding a @Result@ in a parser
+  -- ** Lower-level inspection, embedding a @Result@ in a parser
+  , inspect
   , embedResult
   , liftResult
   -- * Errors
@@ -253,7 +254,11 @@ instance MonadPlus Result where
 -- | A parser for an input @i@.
 newtype Parse i a = Parse
   { unParse :: ReaderT i Result a
-  } deriving ( Functor, Applicative, Monad, Alternative, MonadPlus, MonadReader i, MonadError MetaError)
+  } deriving ( Functor, Applicative, Monad, Alternative, MonadPlus, MonadError MetaError)
+
+-- | Inspect the input under consideration (usually a `MetaValue` or a `MetaObject`)
+inspect :: Parse i i
+inspect = Parse ask
 
 -- | Combine two successful parse results with the @<>@ of @a@.
 instance Semigroup a => Semigroup (Parse i a) where
@@ -443,14 +448,14 @@ onlyFields :: [String] -> ParseObject a -> ParseObject a
 onlyFields = (>>) . go . Set.fromList
   where
     go ks = do
-      fs <- asks $ Map.keysSet . unObject
+      fs <- Map.keysSet . unObject <$> inspect
       case Set.toList (fs `Set.difference` ks) of
         []    -> pure ()
         (x:_) -> throwError (MetaUnknownField x)
 
 -- | Throw a @MetaFieldUnknown@ error if the given field is present.
 guardNoField :: String -> ParseObject ()
-guardNoField k = ask >>= go . lookupMetaObject k
+guardNoField k = inspect >>= go . lookupMetaObject k
   where
     go Nothing  = pure ()
     go (Just _) = throwError (MetaUnknownField k)
@@ -465,7 +470,7 @@ infixr 1 .?
 -- | Run a @MetaValue@ parser on a field if it is present, returning @Just@ the
 -- result, and returning @Nothing@ if it is not present.
 (.?) :: String -> ParseValue a -> ParseObject (Maybe a)
-k .? act = (ask >>= go . lookupMetaObject k) `catchError` wraperr
+k .? act = (inspect >>= go . lookupMetaObject k) `catchError` wraperr
   where
     go Nothing  = pure Nothing
     go (Just x) = fmap Just . embedResult $ runParse act x
@@ -504,7 +509,7 @@ maybeF :: Functor f => a -> f (Maybe a) -> f a
 maybeF = fmap . fromMaybe
 
 -- | Things that can be read from a `MetaObject`. Given for writing your own
--- instances. You can `ask` for the underlying `MetaObject` to inspect it, but
+-- instances. You can `inspect` the underlying `MetaObject`, but
 -- the provided combinators like `.!` and `field` should be more convenient.
 class FromObject a where
   parseObject :: ParseObject a
@@ -542,7 +547,7 @@ instance FromValue a => FromValue [a] where
   parseValue = parseListValue
 
 instance FromValue MetaValue where
-  parseValue = ask
+  parseValue = inspect
 
 instance FromValue Bool where
   parseValue = liftResult go
