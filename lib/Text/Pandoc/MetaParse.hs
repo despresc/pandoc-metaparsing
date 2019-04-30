@@ -77,6 +77,7 @@ module Text.Pandoc.MetaParse
   , liftResult
   -- * Errors
   , MetaError(..)
+  , simpleErrorShow
   , Expectation(..)
   , expectationFromList
   , expectationToList
@@ -173,22 +174,24 @@ newtype Expectation = Expectation
   { unExpectation :: Set.Set String
   } deriving (Eq, Ord, Show, Semigroup, Monoid)
 
+-- | Convert `Expectation` to a list of expectations.
 expectationToList :: Expectation -> [String]
 expectationToList = Set.toList . unExpectation
 
+-- | Convert a list of expectations to `Expectation`.
 expectationFromList :: [String] -> Expectation
 expectationFromList = Expectation . Set.fromList
 
 -- | Possible errors during parsing. The `Semigroup` instance determines how the
--- errors are combined with `\<|\>`. Briefly, we prefer to keep constructors
+-- errors are combined with `<|>`. Briefly, we prefer to keep constructors
 -- that appear earlier in the declaration and are leftmost if the constructors
--- are the same. The exception is that two `MetaExpectGot` values will have
+-- are the same. The exception is that two `MetaExpectGotError` values will have
 -- their `Expectation` fields merged together, keeping the leftmost @String@.
 data MetaError
-  = MetaExpectGotError Expectation (Maybe String) -- ^ Expected @x@; got @Just s@ if something was present, otherwise @Nothing@.
-  | MetaFieldUnknown String   -- ^ Field should not be present
-  | MetaSomeError String             -- ^ Some error
-  | MetaFieldError String MetaError  -- ^ In field @k@, had error @e@
+  = MetaExpectGotError Expectation (Maybe String) -- ^ Expected: @x@, got: @Just s@ if something was present, otherwise @Nothing@.
+  | MetaFieldUnknown String          -- ^ Unknown field @k@.
+  | MetaSomeError String             -- ^ Some error, printed verbatim by `simpleErrorShow`
+  | MetaFieldError String MetaError  -- ^ Got error @e@ when parsing field @k@
   | MetaNullError                    -- ^ Thrown by `empty`
   deriving (Eq, Ord, Show)
 
@@ -221,6 +224,22 @@ showMetaValueType x = case x of
   MetaList _    -> "List"
   MetaInlines _ -> "Inlines"
   MetaBlocks _  -> "Blocks"
+
+-- | Display errors roughly as described in `MetaError`. For
+-- `MetaExpectGotError`, the `Expectation` will be a comma-separated list and the
+-- @got: s@ will be printed on a new line. For `MetaFieldError e f`, we first
+-- display `simpleErrorShow e`, then print @when parsing field f@ on a new line.
+simpleErrorShow :: MetaError -> String
+simpleErrorShow x = case x of
+  MetaExpectGotError e m -> "Expecting: " <> showExp e <> "\n" <> fromM m
+  MetaFieldUnknown f     -> "Unknown field " <> f
+  MetaSomeError e        -> e
+  MetaFieldError k e     -> simpleErrorShow e <> "\nwhen parsing field " <> k
+  MetaNullError          -> "Unknown error"
+  where
+    showExp = intercalate ", " . expectationToList
+    fromM Nothing  = ""
+    fromM (Just s) = "got: " <> s
 
 -- | Throw a simple type error, printing the branch of the @MetaValue@ as what was received.
 --
@@ -360,7 +379,10 @@ infixl 2 <?>
 --
 -- > p <|> q <?> "expect" = (p <|> q) <?> "expect"
 --
--- so key errors will be preserved and all errors from chained `MetaValue` parsers will be overwritten.
+-- so key errors will be preserved and all errors from chained `MetaValue`
+-- parsers will be overwritten. If you are using `simpleErrorShow` to show
+-- errors then an expectation should be a simple comma-separated list, like
+-- @"expect one, expect two"@.
 (<?>) :: ParseValue a -> String -> ParseValue a
 (<?>) = flip expect
 
