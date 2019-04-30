@@ -129,7 +129,7 @@ import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 -- >   parseValue = objectNamed "contributor" $
 -- >     Contributor <$> field "name" <*> ("location" .! fromInlines) <*> "title" .?! NoTitle
 --
--- Then @`parseMetaWith` (`field` "contributors")@ will give a function @`Meta`
+-- Then @`runParseMeta` (`field` "contributors")@ will give a function @`Meta`
 -- -> `Result` [Contributor]@. Thrown errors contain basic positional
 -- information and an `Error` `MetaError` result can be printed with
 -- `simpleErrorShow`.
@@ -144,7 +144,7 @@ import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 -- > instance FromObject [Contributor] where
 -- >   parseObject = field "contributors"
 --
--- and use `parseMeta` for a @`Meta` -> `Result` [Contributor]@. Parsers can be
+-- and use `fromMeta` for a @`Meta` -> `Result` [Contributor]@ function. Parsers can be
 -- written with varying levels of `FromValue` and `FromObject` use.
 
 -- $metaparse
