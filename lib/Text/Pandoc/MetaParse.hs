@@ -30,6 +30,8 @@ module Text.Pandoc.MetaParse
   , MetaObject(..)
   , ParseValue
   , ParseObject
+
+  -- ** Running parsers
   , runParse
   , runParseValue
   , runParseObject
@@ -325,7 +327,7 @@ infixl 2 <?>
 --
 -- > p <|> q <?> "expect" = (p <|> q) <?> "expect"
 --
--- so key errors will be preserved, but errors from chained `MetaValue` parsers will be overwritten.
+-- so key errors will be preserved and all errors from chained `MetaValue` parsers will be overwritten.
 (<?>) :: MonadError MetaError m => m a -> String -> m a
 (<?>) = flip expect
 
@@ -501,7 +503,9 @@ k .?! x = maybeF x $ maybeField k
 maybeF :: Functor f => a -> f (Maybe a) -> f a
 maybeF = fmap . fromMaybe
 
--- | Things that can be read from a @MetaObject@. Given for writing your own instances.
+-- | Things that can be read from a `MetaObject`. Given for writing your own
+-- instances. You can `ask` for the underlying `MetaObject` to inspect it, but
+-- the provided combinators like `.!` and `field` should be more convenient.
 class FromObject a where
   parseObject :: ParseObject a
 
