@@ -366,7 +366,7 @@ liftResult = Parse . ReaderT
 infixl 2 <?>
 
 -- | In @act \<?\> s@, modify errors thrown from @act@ by replacing the
--- expectation string in an error with @e@, keeping the received string. In detail,
+-- `Expectation` in an error with @e@, keeping the received string. In detail,
 -- we have
 --
 -- > throwError (MetaExpectGotError _ y) <?> x = throwError (MetaExpectGotError x y)
