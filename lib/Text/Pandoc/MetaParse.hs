@@ -56,7 +56,7 @@ module Text.Pandoc.MetaParse
   , maybeF
   , withObjectName
 
-  -- ** Guarding fields
+  -- *** Guarding fields
   , onlyFields
   , guardNoField
 
