@@ -35,10 +35,13 @@ module Text.Pandoc.MetaParse
   , runParseObject
   , parseMeta
   , parseMetaWith
+
   -- * Parsing @MetaObject@ and @MetaValue@ values
   -- ** @MetaObject@ parsers
+
   , FromObject(..)
-  -- ** Field parsers
+
+  -- *** Parsing fields
   -- $field
 
   , (.!)
@@ -46,7 +49,14 @@ module Text.Pandoc.MetaParse
   , field
   , maybeField
   , (.?!)
+  , maybeF
+
+  -- ** Guarding fields
+  , onlyFields
+  , guardNoField
+
   -- ** @MetaValue@ parsers
+
   , FromValue(..)
   , object
   , fromObject
@@ -81,6 +91,7 @@ import           Data.List            (intercalate)
 import           Data.Map             (Map)
 import qualified Data.Map             as Map
 import           Data.Maybe           (fromMaybe)
+import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
 import           Text.Pandoc
@@ -156,8 +167,9 @@ import           Text.Pandoc.Shared   (stringify)
 data MetaError
   = MetaExpectGotError String String -- ^ Expected @x@, got @y@
   | MetaExpectError String           -- ^ Expected @x@
-  | MetaFieldError String MetaError  -- ^ In field @k@, had error @e@.
-  | MetaFieldNotPresent
+  | MetaFieldError String MetaError  -- ^ In field @k@, had error @e@
+  | MetaUnknownField String          -- ^ Unexpected field @k@
+  | MetaFieldNotPresent              -- ^ Field @k@ should be present
   | MetaSomeError String             -- ^ Other errors
   deriving (Eq, Ord, Show)
 
@@ -199,6 +211,14 @@ data Result a
   | Success a
   deriving Show
 
+-- | Combines two @Success@ values with @<>@
+instance Semigroup a => Semigroup (Result a) where
+  (<>) = liftA2 (<>)
+
+-- | Lift the unit of @a@ to a @Result a@
+instance Monoid a => Monoid (Result a) where
+  mempty = pure mempty
+
 instance Functor Result where
   fmap _ (Error e)   = Error e
   fmap f (Success x) = Success (f x)
@@ -223,7 +243,7 @@ instance Fail.MonadFail Result where
 
 instance Alternative Result where
   empty = Fail.fail "empty"
-  z@(Success _) <|> _ = z
+  Success z     <|> _ = Success z
   Error _       <|> x = x
 
 instance MonadPlus Result where
@@ -231,7 +251,15 @@ instance MonadPlus Result where
 -- | A parser for an input @i@.
 newtype Parse i a = Parse
   { unParse :: ReaderT i Result a
-  } deriving (Functor, Applicative, Monad, Alternative, MonadPlus, MonadReader i, MonadError MetaError)
+  } deriving ( Functor, Applicative, Monad, Alternative, MonadPlus, MonadReader i, MonadError MetaError)
+
+-- | Combine two successful parse results with the @<>@ of @a@.
+instance Semigroup a => Semigroup (Parse i a) where
+  (<>) = liftA2 (<>)
+
+-- | Lift the unit of @a@ to a @Parse i a@
+instance Monoid a => Monoid (Parse i a) where
+  mempty = pure mempty
 
 -- | A parser for a @MetaValue@.
 type ParseValue  = Parse MetaValue
@@ -347,7 +375,7 @@ symbolFrom tbl = symbolLike >>= lookStr
       Just a  -> pure a
       Nothing -> throwExpectGot err x
 
--- | Parse a @MetaMap@. You most likely want to use functions like `object`, `fromObject`, and `.!` instead of this function.
+-- | Succeeds on `MetaMap`. You most likely want to use functions like `object`, `fromObject`, and `.!` instead of this function.
 metaMap :: ParseValue (Map String MetaValue)
 metaMap = liftResult go
   where
@@ -406,9 +434,26 @@ object act = metaMap >>= embedResult . runParse act . MetaObject
 fromObject :: FromObject a => ParseValue a
 fromObject = object parseObject
 
+-- | Check that an object has only (but not necessarily all of) the listed
+-- fields, proceeding with parsing if so, throwing a @MetaFieldUnknown@ error
+-- with one of the unknown fields otherwise.
+onlyFields :: [String] -> ParseObject a -> ParseObject a
+onlyFields = (>>) . go . Set.fromList
+  where
+    go ks = do
+      fs <- asks $ Map.keysSet . unObject
+      case Set.toList (fs `Set.difference` ks) of
+        []    -> pure ()
+        (x:_) -> throwError (MetaUnknownField x)
+
+-- | Throw a @MetaFieldUnknown@ error if the given field is present.
+guardNoField :: String -> ParseObject ()
+guardNoField k = ask >>= go . lookupMetaObject k
+  where
+    go Nothing  = pure ()
+    go (Just _) = throwError (MetaUnknownField k)
+
 -- $field
--- The various infix field parser functions have a low @infixr@ precedence so they may be chained.
---
 -- Note that all of these functions wrap thrown errors during the parsing of a
 -- field @k@ in @MetaErrorField k@. The ones that expect a field to be present
 -- throw a @MetaErrorField k MetaFieldNotPresent@ error if it is not.
@@ -456,12 +501,7 @@ k .?! x = maybeF x $ maybeField k
 maybeF :: Functor f => a -> f (Maybe a) -> f a
 maybeF = fmap . fromMaybe
 
--- -- | Give a default value to a parser returning @Maybe a@. Useful for parsing
--- -- optional fields with `maybeField`. 
--- (.?=) :: Functor f => f (Maybe a) -> a -> f a
--- (.?=) = flip $ fmap . fromMaybe
-
--- | Things that can be read from a @MetaObject@.
+-- | Things that can be read from a @MetaObject@. Given for writing your own instances.
 class FromObject a where
   parseObject :: ParseObject a
 
