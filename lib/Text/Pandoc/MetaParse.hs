@@ -505,10 +505,10 @@ object :: ParseObject a -> ParseValue a
 object act = metaMap >>= embedResult . runParse act . MetaObject
 
 -- | Run a @MetaObject@ parser as a @MetaValue@ parser, wrapping thrown errors
--- in a @MetaWhenParseError@ using the supplied string, and throwing a type error
--- using the supplied string if the @MetaValue@ is not a `MetaMap`. If your
--- `ParseObject` parser already uses `withObjectName` then this may result in
--- redundant error information.
+-- in a @MetaWhenParseError@ using the supplied string, and throwing a type
+-- error using the supplied string if the @MetaValue@ is not a `MetaMap`. If
+-- your `ParseObject` parser already uses `withObjectName` then this function
+-- may result in redundant information in errors.
 objectNamed :: String -> ParseObject a -> ParseValue a
 objectNamed n = object . withObjectName n
 
