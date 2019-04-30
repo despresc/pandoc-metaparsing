@@ -183,10 +183,11 @@ expectationFromList :: [String] -> Expectation
 expectationFromList = Expectation . Set.fromList
 
 -- | Possible errors during parsing. The `Semigroup` instance determines how the
--- errors are combined with `<|>`. Briefly, we prefer to keep constructors
--- that appear earlier in the declaration and are leftmost if the constructors
--- are the same. The exception is that two `MetaExpectGotError` values will have
--- their `Expectation` fields merged together, keeping the leftmost @String@.
+-- errors are combined with `<|>`. Briefly, we prefer to keep values with
+-- constructors that appear earlier in the declaration, and that are leftmost if
+-- the constructors are the same. The exception is that two `MetaExpectGotError`
+-- values will have their `Expectation` fields merged together, keeping the
+-- leftmost @String@.
 data MetaError
   = MetaExpectGotError Expectation (Maybe String) -- ^ Expected: @x@, got: @Just s@ if something was present, otherwise @Nothing@.
   | MetaFieldUnknown String          -- ^ Unknown field @k@.
