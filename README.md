@@ -30,17 +30,17 @@ and write instances of `FromValue`
 
 ```haskell
 instance FromValue ContributorTitle where
-  parseValue = symbol "no-title"  NoTitle <|> ContributorTitle <$> parseValue <?> "no-title, inline title"
+  parseValue = symbol "no-title"  NoTitle <|> ContributorTitle <$> parseValue <?> "inline title"
 
 instance FromValue Contributor where
   parseValue = object $ Contributor <$> field "name" <*> field "location" <*> "title" .?! NoTitle
 ```
 
 so that `parseMetaField "contributors"` will return either `Error MetaError` or
-`Success Authors`. We've used `.!?` to parse the possibly-not-present `title`
+`Success Contributors`. We've used `.!?` to parse the possibly-not-present `title`
 field by giving it the default value `NoTitle`.
 
-## Quick reference
+## Meta parser reference
 
 A typical parser will consist of `ParseValue a = Parse MetaValue a` and
 `ParseObject a = Parse MetaObject a` parsers, with functions like `.!`, `field`,
@@ -87,6 +87,18 @@ symbolLike :: ParseValue String
 -- Used in symbol and symbolFrom for that reason.
 ```
 
+## Errors
+
+The basic error returned by most parsers is a `MetaExpectGotError e ms`,
+consisting of a set `e :: Expectation` of expected values and a `ms :: Maybe
+String` representing what was received. The behaviour of `<|>` and the monoid
+instance of `MetaError` is to combine the `Expectation` of two errors if
+possible, otherwise preferring more immediate and informative errors.
+
+The field parsing functions like `field k` and `(k .!)` automatically catch errors
+thrown by their parsers and wrap them in a `MetaWhenParseError k`, adding some
+positional information to errors that is used by `simpleErrorShow`.
+
 ## Note on Char, String, and other list instances
 
 In the instance for `Char` we parse exactly the input `MetaString [x]` as `x ::
@@ -96,6 +108,9 @@ String` for `parseListValue`. Since the instance for `FromValue a => FromValue
 succeeds exactly on a `MetaString` input. However, this decision does mean that
 a `MetaList` of entries of the form `MetaString [x]` will _not_ parse as a
 `String`. This is most likely what you want, but there is a `weakString` parser
-given that also succeeds in this case.
+given that also succeeds in this case. Similar remarks apply to the `Inline` and
+`Block` instances.
 
-Similar remarks apply to the `Inline` and `Block` instances.
+All of this does mean that our class `FromValue` is somewhat incompatible with
+the Pandoc class `ToMetaValue` in that `Char`, `Inline`, and `Block` cannot be
+made instances of the latter class and satisfy
