@@ -15,12 +15,12 @@ contributors: [ { name: [Inline];
 you can write Haskell types
 
 ```haskell
-data ContribTitle = NoTitle | ContribTitle [Inline]
+data ContributorTitle = NoTitle | HasTitle Inlines
 
 data Contributor = Contributor
-  { name :: [Inline]
-  , location :: [Inline]
-  , title :: AuthorTitle
+  { name :: Inlines
+  , location :: [Inline] -- Not Inlines, to show off .! and fromInlines
+  , title :: ContributorTitle
   }
 
 type Contributors = [Contributor]
@@ -30,15 +30,18 @@ and write instances of `FromValue`
 
 ```haskell
 instance FromValue ContributorTitle where
-  parseValue = symbol "no-title"  NoTitle <|> ContributorTitle <$> parseValue <?> "inline title"
+  parseValue = symbol "no-title"  NoTitle  <|>
+               ContributorTitle <$> parseValue <?> "inline title"
 
 instance FromValue Contributor where
-  parseValue = object $ Contributor <$> field "name" <*> field "location" <*> "title" .?! NoTitle
+  parseValue = objectNamed "contributor" $
+    Contributor <$> field "name" <*> "location" .! fromInlines <*> "title" .?! NoTitle
 ```
 
-so that `parseMetaField "contributors"` will return either `Error MetaError` or
-`Success Contributors`. We've used `.!?` to parse the possibly-not-present `title`
-field by giving it the default value `NoTitle`.
+so that `fromMetaField "contributors"` will return either `Error MetaError` or
+`Success Contributors`. We've used `.!?` to parse the possibly-not-present
+`title` field by giving it the default value `NoTitle`, and `.!` to parse the
+field of an object with an explicit parser `fromInlines`.
 
 ## Meta parser reference
 
@@ -72,7 +75,7 @@ field f :: ParseObject a
 -- Expect the field f to be set, parsing its value with parseValue
 
 onlyFields fs p :: ParseObject a
--- Require before executing p :: ParseObject a that the object 
+-- Require before executing p :: ParseObject a that the object
 -- only have fields that are listed in fs :: [String].
 -- Useful for detecting user error when fields can have default values
 -- (otherwise a misspelled field name might be silently ignored)
@@ -82,7 +85,7 @@ f .?! a :: ParseObject a
 
 symbolLike :: ParseValue String
 -- Expect the input to be MetaString s (returning s), or MetaInlines [Str s] (returning s).
--- Useful when the input is a symbol standing for an option, like the no-title above, 
+-- Useful when the input is a symbol standing for an option, like the no-title above,
 -- and you do not want to require the user to enclose the option in quotation marks.
 -- Used in symbol and symbolFrom for that reason.
 ```
@@ -90,28 +93,11 @@ symbolLike :: ParseValue String
 ## Errors
 
 The basic error returned by most parsers is a `MetaExpectGotError e ms`,
-consisting of a set `e :: Expectation` of expected values and a `ms :: Maybe
-String` representing what was received. The behaviour of `<|>` and the monoid
-instance of `MetaError` is to combine the `Expectation` of two errors if
-possible, otherwise preferring more immediate and informative errors.
+consisting of a set `e :: Expectation` of expected values and an `ms :: Maybe
+String` representing what was received. The `Monoid` instance of `MetaError` and
+the `Alternative` instance of `Parse i` are written so that `Expectation` fields
+of errors are combined when possible.
 
 The field parsing functions like `field k` and `(k .!)` automatically catch errors
 thrown by their parsers and wrap them in a `MetaWhenParseError k`, adding some
 positional information to errors that is used by `simpleErrorShow`.
-
-## Note on Char, String, and other list instances
-
-In the instance for `Char` we parse exactly the input `MetaString [x]` as `x ::
-Char` for `parseValue`, and we parse exactly the input `MetaString s` as `s ::
-String` for `parseListValue`. Since the instance for `FromValue a => FromValue
-[a]` uses `parseValue = parseListValue` this gives us a `String` instance that
-succeeds exactly on a `MetaString` input. However, this decision does mean that
-a `MetaList` of entries of the form `MetaString [x]` will _not_ parse as a
-`String`. This is most likely what you want, but there is a `weakString` parser
-given that also succeeds in this case. Similar remarks apply to the `Inline` and
-`Block` instances.
-
-All of this does mean that our class `FromValue` is somewhat incompatible with
-the Pandoc class `ToMetaValue` in that `Char`, `Inline`, and `Block` cannot be
-made instances of the latter class while keeping the `runParseValue .
-toMetaValue = pure` behaviour.

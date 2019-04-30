@@ -21,10 +21,6 @@ module Text.Pandoc.MetaParse
   -- ** @MetaObject@ and @MetaValue@ parsers
   -- $metaparse
 
--- TODO: Salvage this
---  -- ** Further examples
---  -- $complicate
-
   -- * Parse and result types
     Parse
   , Result(..)
@@ -34,11 +30,10 @@ module Text.Pandoc.MetaParse
 
   -- ** Running parsers
   , runParse
-  , runParseValue
-  , runParseObject
-  , parseMeta
-  , parseMetaField
-  , parseMetaWith
+  , runParseMeta
+  , fromMeta
+  , fromObject
+  , fromMetaField
 
   -- * Parsing @MetaObject@ and @MetaValue@ values
   -- ** @MetaObject@ parsers
@@ -65,20 +60,20 @@ module Text.Pandoc.MetaParse
   , FromValue(..)
   , object
   , objectNamed
-  , fromObject
+  , objectValue
   , symbol
   , symbolFrom
-  , charLike
-  , symbolLike
-  , stringified
-  , metaMap
-  , weakString
-  , weakInlines
-  , weakBlocks
+  , charlike
+  , symbollike
+  , parseString
+  , parseInlines
+  , parseBlocks
+  , parseMetaMap
   -- ** Lower-level inspection, embedding a @Result@ in a parser
   , inspect
   , embedResult
   , liftResult
+  , parseOfValue
   -- * Errors
   , MetaError(..)
   , simpleErrorShow
@@ -104,42 +99,53 @@ import           Data.Maybe           (fromMaybe)
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
-import           Text.Pandoc
+import           Text.Pandoc.Definition
 import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
-import           Text.Pandoc.Shared   (stringify)
 
 -- TODO: Go through documentation and fix it up! Make sure the examples make sense, esp. with the new error system!
+-- TODO: Fix up below with markup in the code blocks!
 
 -- $use
--- Suppose you expect the @authors@ field of your document's `Meta` to consist of a list of @{ name: [Inline]; location: [Inline] }@ entries.
--- You can create the type
+-- Suppose you expect the @contributors@ field of your document's `Meta` to
+-- consist of a list of @{ name: [Inline]; location: [Inline]; title: (no-title
+-- | [Inline]) }@ entries, with the @title@ field having the default @no-title@
+-- if it is not present. You can create the (somewhat silly) types
 --
--- > data Author = Author
--- >   { name     :: [Inline]
--- >   , location :: [Inline]
--- >   }
+-- > data ContributorTitle = NoTitle | HasTitle Inlines
 -- >
+-- > data Contributor = Contributor
+-- >   { name     :: Inlines
+-- >   , location :: [Inline] -- Not Inlines, to show off .! and fromInlines
+-- >   , title    :: ContributorTitle
+-- >   }
 --
--- and write the instance
+-- and write the instances
 --
--- > instance FromValue Author where
--- >   parseValue = objectNamed "author" $ Author <$> field "name" <*> field "location"
+-- > instance FromValue ContributorTitle where
+-- >   parseValue = symbol "no-title" NoTitle <|>
+-- >                HasTitle <$> parseValue <?> "inline title"
+-- >
+-- > instance FromValue Contributor where
+-- >   parseValue = objectNamed "contributor" $
+-- >     Contributor <$> field "name" <*> ("location" .! fromInlines) <*> "title" .?! NoTitle
 --
--- Then @`parseMetaWith` (`field` "authors")@ will give a function @`Meta` ->
--- `Result` [Author]@, and an `Error` `MetaError` result can be printed with
+-- Then @`parseMetaWith` (`field` "contributors")@ will give a function @`Meta`
+-- -> `Result` [Contributor]@. Thrown errors contain basic positional
+-- information and an `Error` `MetaError` result can be printed with
 -- `simpleErrorShow`.
 --
--- There are other possibilities: you can work solely with `FromObject` and write
+-- There are other possibilities: you can write `FromObject` instances like
 --
 -- > instance FromObject Author where
--- >   parseObject = withObjectName "author" $ Author <$> field "name" <*> field "location"
+-- >   parseObject = withObjectName "contributor" $
+-- >     Author <$> field "name" <*> "location" .! fromInlines <*> "title" .?! NoTitle
+-- >     -- assuming that the ContributorTitle instance is still around
 -- >
--- > instance FromObject [Author] where
--- >   parseObject = field "authors"
+-- > instance FromObject [Contributor] where
+-- >   parseObject = field "contributors"
 --
--- and have `parseMeta` give you the same function @`Meta` -> `Result` [Author]@.
--- Or you can mix instances of both `FromValue` and `FromObject`, or use
--- neither and simply write the parser you need directly.
+-- and use `parseMeta` for a @`Meta` -> `Result` [Contributor]@. Parsers can be
+-- written with varying levels of `FromValue` and `FromObject` use.
 
 -- $metaparse
 -- In this library we think of the @Map String MetaValue@ in a @MetaMap@ as
@@ -152,34 +158,9 @@ import           Text.Pandoc.Shared   (stringify)
 --
 --   * In one direction, we have functions like `.!` and `field` that parse the fields of the input `MetaObject` using `ParseValue` parsers.
 --
---   * In the other direction, we have the functions `object` and `fromObject` that parse the input `MetaValue` using `ParseObject` parsers.
-
--- TODO: Salvage this later
--- -- $complicate
--- -- If we have a field @prefix@ that can be @no-prefix@, @{ with-prefix: string
--- -- }@, or be absent (with default @no-prefix@) then we can parse this directly
--- -- (and somewhat confusingly) with
--- --
--- -- > data Prefix = WithPrefix String | NoPrefix
--- -- >
--- -- > p :: ParseObject Prefix
--- -- > p = maybeF NoPrefix $ "prefix" .? symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") <?> "{ with-prefix: }"
--- --
--- -- or create instances
--- --
--- -- > instance FromValue Prefix where
--- -- >   parseValue = pNo <?> "no-prefix" <|> pWith
--- -- >     where
--- -- >       pNo   = symbol "no-prefix" NoPrefix
--- -- >       pWith = expect "{ with-prefix: string }" $ object $ WithPrefix <$> field "with-prefix"
--- -- >
--- -- > instance FromObject Prefix where
--- -- >  parseObject = "prefix" .?! NoPrefix
--- --
--- -- and have @parseMeta :: Meta -> Result Prefix@.
+--   * In the other direction, we have the functions `object` and `objectValue` that parse the input `MetaValue` using `ParseObject` parsers.
 
 -- | Expected values when parsing.
-
 newtype Expectation = Expectation
   { unExpectation :: Set.Set String
   } deriving (Eq, Ord, Show, Semigroup, Monoid)
@@ -226,7 +207,7 @@ instance Semigroup MetaError where
 instance Monoid MetaError where
   mempty = MetaNullError
 
--- | Show the branch of the argument. Used for type errors.
+-- | Show the branch of the argument, without the @Meta@ part, except that @MetaString@ is shown as @Text@. Used for simple type errors.
 showMetaValueType :: MetaValue -> String
 showMetaValueType x = case x of
   MetaString _  -> "String"
@@ -345,29 +326,29 @@ lookupMetaObject k = Map.lookup k . unObject
 runParse :: Parse i a -> i -> Result a
 runParse = runReaderT . unParse
 
--- | Convert a `MetaValue`, returning a `Result`.
-runParseValue :: FromValue a => MetaValue -> Result a
-runParseValue = runParse parseValue
-
--- | Convert a `MetaObject`, returning a `Result`.
-runParseObject :: FromObject a => MetaObject -> Result a
-runParseObject = runParse parseObject
-
--- | Read a value from `Meta` using its `FromObject` instance.
-parseMeta :: FromObject a => Meta -> Result a
-parseMeta = runParseObject . rewrap
+-- | Use a `ParseObject` parser as a `Meta` parser.
+runParseMeta :: ParseObject a -> Meta -> Result a
+runParseMeta act = runParse act . rewrap
   where
     rewrap (Meta m) = MetaObject m
 
--- | Use a `ParseObject` parser as a `Meta` parser.
-parseMetaWith :: ParseObject a -> Meta -> Result a
-parseMetaWith act = runParse act . rewrap
+-- | Convert a `MetaValue`, returning a `Result`.
+fromValue :: FromValue a => MetaValue -> Result a
+fromValue = runParse parseValue
+
+-- | Convert a `MetaObject`, returning a `Result`.
+fromObject :: FromObject a => MetaObject -> Result a
+fromObject = runParse parseObject
+
+-- | Read a value from `Meta` using its `FromObject` instance.
+fromMeta :: FromObject a => Meta -> Result a
+fromMeta = fromObject . rewrap
   where
     rewrap (Meta m) = MetaObject m
 
 -- | Read a field of `Meta` using its `FromValue` instance.
-parseMetaField :: FromValue a => String -> Meta -> Result a
-parseMetaField = parseMetaWith . field
+fromMetaField :: FromValue a => String -> Meta -> Result a
+fromMetaField = runParseMeta . field
 
 -- | Embed a `Result` in a `Parse` action.
 embedResult :: Result a -> Parse i a
@@ -412,16 +393,16 @@ withObjectName s = flip catchError go
   where
     go = throwError . MetaWhenParseError s
 
--- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@. Can be used like `symbolLike` is used in `symbol`.
-charLike :: ParseValue Char
-charLike = (symbolLike >>= go) <?> "Char"
+-- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@. Can be used like `symbollike` is used in `symbol`.
+charlike :: ParseValue Char
+charlike = (symbollike >>= go) <?> "Char"
   where
     go [x] = pure x
     go _   = empty
 
 -- | Succeeds on @MetaString s@ and @MetaInlines [Str s]@. Used in `symbol` and `symbolFrom`.
-symbolLike :: ParseValue String
-symbolLike = liftResult go
+symbollike :: ParseValue String
+symbollike = liftResult go
   where
     go x = case x of
       MetaString s        -> pure s
@@ -429,9 +410,9 @@ symbolLike = liftResult go
       z                   -> throwTypeError "symbol" z
 
 -- | Parse a "symbol", a string representing an element of a Haskell type @a@.
--- The parser @symbol sym x@ succeeds and returns @x@ if `symbolLike` returns @sym@.
+-- The parser @symbol sym x@ succeeds and returns @x@ if `symbollike` returns @sym@.
 --
--- We use `symbolLike` and not the @String@ instance of @parseValue@ because
+-- We use `symbollike` and not the @String@ instance of @parseValue@ because
 -- Pandoc will parse bare text as @[Inline]@ and we would like to allow users to
 -- write symbols without enclosing them in quotation marks if possible. Notably,
 -- symbols containing whitespace or markdown characters will still need to be
@@ -440,69 +421,51 @@ symbolLike = liftResult go
 symbol :: String -> a -> ParseValue a
 symbol sym a = symbolFrom [(sym, a)]
 
--- | Parse a symbol from a given table. The parser @symbolFrom tbl@ succeeds if `symbolLike` returns @sym@ and @sym@ is found in the table.
+-- | Parse a symbol from a given table. The parser @symbolFrom tbl@ succeeds if `symbollike` returns @sym@ and @sym@ is found in the table.
 symbolFrom :: [(String, a)] -> ParseValue a
-symbolFrom tbl = symbolLike >>= lookStr
+symbolFrom tbl = symbollike >>= lookStr
   where
     err = intercalate ", " . fmap fst $ tbl
     lookStr x = case lookup x tbl of
       Just a  -> pure a
       Nothing -> throwExpectGot err (Just x)
 
--- | Succeeds on `MetaMap`. You most likely want to use functions like `object`, `fromObject`, and `.!` instead of this function.
-metaMap :: ParseValue (Map String MetaValue)
-metaMap = liftResult go
+-- | Succeeds on `MetaMap`. You most likely want to use functions like `object`, `objectValue`, and `.!` instead of this function.
+parseMetaMap :: ParseValue (Map String MetaValue)
+parseMetaMap = liftResult go
   where
     go x = case x of
       MetaMap m -> pure m
       z         -> throwTypeError "Map" z
 
--- | Parse something other than a list or map and `stringify` it.
-stringified :: ParseValue String
-stringified = liftResult go
-  where
-    go x = case x of
-      MetaString s  -> pure s
-      MetaInlines s -> pure $ stringify s
-      MetaBlocks s  -> pure $ stringify s
-      MetaBool b    -> pure $ if b then "true" else "false"
-      z             -> throwTypeError "String-like " z
-
--- | A @String@ parser that succeeds on @MetaString@ and on a @MetaList@ whose
--- entries are of the form @MetaString [x]@.
-weakString :: ParseValue String
-weakString = liftResult go
+-- | Succeeds on @MetaString@.
+parseString :: ParseValue String
+parseString = liftResult go
   where
     go x = case x of
       MetaString s -> pure s
-      MetaList l   -> traverse runParseValue l
       z            -> throwTypeError "String" z
 
--- | An @[Inline]@ parser that succeeds on @MetaInlines@ and on a @MetaList@
--- whose entries are of the form @MetaInlines [x]@.
-weakInlines :: ParseValue [Inline]
-weakInlines = liftResult go
+-- | Succeeds on @MetaInlines@.
+parseInlines :: ParseValue [Inline]
+parseInlines = liftResult go
   where
     go x = case x of
       MetaInlines s -> pure s
-      MetaList l    -> traverse runParseValue l
       z             -> throwTypeError "Inlines" z
 
-
--- | A @[Block]@ parser that succeeds on @MetaBlocks@ and on a @MetaList@ whose
--- entries are of the form @MetaBlocks [x]@.
-weakBlocks :: ParseValue [Block]
-weakBlocks = liftResult go
+-- | Succeeds on @MetaBlocks@.
+parseBlocks :: ParseValue [Block]
+parseBlocks = liftResult go
   where
     go x = case x of
       MetaBlocks s -> pure s
-      MetaList l   -> traverse runParseValue l
       z            -> throwTypeError "Blocks" z
 
 -- | Run a @MetaObject@ parser as a @MetaValue@ parser, throwing an error if the
 -- @MetaValue@ is not a @MetaMap@.
 object :: ParseObject a -> ParseValue a
-object act = metaMap >>= embedResult . runParse act . MetaObject
+object act = parseMetaMap >>= embedResult . runParse act . MetaObject
 
 -- | Run a @MetaObject@ parser as a @MetaValue@ parser, wrapping thrown errors
 -- in a @MetaWhenParseError@ using the supplied string, and throwing a type
@@ -512,9 +475,9 @@ object act = metaMap >>= embedResult . runParse act . MetaObject
 objectNamed :: String -> ParseObject a -> ParseValue a
 objectNamed n = object . withObjectName n
 
--- | Expect a @MetaMap@, parsing it as @MetaObject@.
-fromObject :: FromObject a => ParseValue a
-fromObject = object parseObject
+-- | Expect a @MetaMap@, parsing it as a @MetaObject@.
+objectValue :: FromObject a => ParseValue a
+objectValue = object parseObject
 
 -- | Check that an object has only (but not necessarily all of) the listed
 -- fields, proceeding with parsing if so, throwing a @MetaFieldUnknown@ error
@@ -540,7 +503,7 @@ guardNoField k = inspect >>= go . lookupMetaObject k
 -- field @k@ in @MetaErrorField k@. The ones that expect a field to be present
 -- throw a @MetaErrorField k MetaFieldNotPresent@ error if it is not.
 
-infixr 1 .?
+infixr 5 .?
 
 -- | Run a @MetaValue@ parser on a field if it is present, returning @Just@ the
 -- result, and returning @Nothing@ if it is not present.
@@ -551,7 +514,7 @@ k .? act = (inspect >>= go . lookupMetaObject k) `catchError` wraperr
     go (Just x) = fmap Just . embedResult $ runParse act x
     wraperr e = throwError $ MetaWhenParseError ("field " <> k) e
 
-infixr 1 .!
+infixr 5 .!
 
 -- | Run a @MetaValue@ parser on a field, throwing an error if it is not
 -- present.
@@ -591,35 +554,30 @@ class FromObject a where
 
 -- | Things that can be converted from a @MetaValue@.
 --
--- We include @parseListValue@ so we can have sensible results when parsing
--- @String@, @MetaInlines@, and @MetaBlocks@.
---
--- Note that we parse a @MetaValue@ as a @String@, @[Inline]@, or @[Block]@
--- /only when/ it is a @MetaString@, @MetaInlines@, or @MetaBlocks@,
--- respectively. This remark applies to the parsing of @Text@, @Inlines@, and
--- @Blocks@. If you also want a @MetaList@ to parse as one of these if all of
--- its entries parse as either @Char@, @Inline@, or @Block@, then use
--- `weakString`, `weakInlines`, or `weakBlocks`.
+-- You can use the `parseString`, `parseInlines`, and `parseBlocks` functions if
+-- you want to match a `MetaString`, `MetaInlines`, or `MetaBlocks` result and do
+-- not want to use the `Text`, `Inlines`, or `Blocks` instances provided.
 --
 -- No @Map String MetaValue@ or @MetaObject@ instance is given. Use functions
--- like `object`, `fromObject`, and `field` instead. Use `metaMap` if you are
+-- like `object`, `objectValue`, and `field` instead. Use `parseMetaMap` if you are
 -- sure you need to parse a @Map String MetaValue@.
 class FromValue a where
   parseValue :: ParseValue a
-  parseListValue :: ParseValue [a]
 
-  parseListValue = liftResult go >>= traverse fromValue
-    where
-      go x = case x of
-        MetaList s -> pure s
-        z          -> throwTypeError "List" z
-
--- | Parse a @MetaValue@ in the @Parse i@ monad.
-fromValue :: FromValue a => MetaValue -> Parse i a
-fromValue = embedResult . runParseValue
+-- | Parse a @MetaValue@ in a @Parse i@ monad using its `FromValue` instance.
+-- This is used in implementing things like the @FromValue a => FromValue [a]@
+-- instance. This can be used, e.g., when you `inspect` a value, but the various
+-- `FromValue` instances and parser combinators will be of more use to you than
+-- this practice.
+parseOfValue :: FromValue a => MetaValue -> Parse i a
+parseOfValue = embedResult . fromValue
 
 instance FromValue a => FromValue [a] where
-  parseValue = parseListValue
+  parseValue = liftResult go
+    where
+      go x = case x of
+        MetaList l -> traverse fromValue l
+        z          -> throwTypeError "List" z
 
 instance FromValue MetaValue where
   parseValue = inspect
@@ -633,53 +591,23 @@ instance FromValue Bool where
 
 -- | Parse @MetaString@ as @Text@.
 instance FromValue Text where
-  parseValue = Text.pack <$> parseValue <?> "text"
-
--- | Parse @MetaString [x]@ as @Char@ and @MetaString s@ as @String@
-instance FromValue Char where
   parseValue = liftResult go
     where
-      go (MetaString [x]) = pure x
-      go (MetaString s)   = throwExpectGot "Char" (Just s)
-      go z                = throwTypeError "Char" z
-  parseListValue = liftResult go
-    where
-      go x = case x of
-        MetaString s -> pure s
-        z            -> throwTypeError "String" z
+      go (MetaString s) = pure $ Text.pack s
+      go z              = throwTypeError "Text" z
 
--- | Parse @MetaInlines [x]@ as @Inline@ and @MetaInlines s@ as @[Inline]@
-instance FromValue Inline where
+-- | Parse @MetaInlines@ as @Inlines@.
+instance FromValue Inlines where
   parseValue = liftResult go
     where
       go x = case x of
-        MetaInlines [y] -> pure y
-        MetaInlines _   -> throwExpectGot "Inlines of length 1" Nothing
-        z               -> throwTypeError "Inline" z
-  parseListValue = liftResult go
-    where
-      go x = case x of
-        MetaInlines y -> pure y
+        MetaInlines s -> pure $ fromList s
         z             -> throwTypeError "Inlines" z
 
--- | Parse @MetaBlocks [x]@ as @Block@ and @MetaBlocks s@ as @[Block]@
-instance FromValue Block where
+-- | Parse @MetaBlocks@ as @Blocks@.
+instance FromValue Blocks where
   parseValue = liftResult go
    where
      go x = case x of
-       MetaBlocks [y] -> pure y
-       MetaBlocks _   -> throwExpectGot "Blocks of length 1" Nothing
-       z              -> throwTypeError "Block" z
-  parseListValue = liftResult go
-    where
-      go x = case x of
-        MetaBlocks y -> pure y
-        z            -> throwTypeError "Blocks" z
-
--- | Parse @MetaInlines@ as @Inlines@
-instance FromValue Inlines where
-  parseValue = fromList <$> parseValue
-
--- | Parse @MetaBlocks@ as @Blocks@
-instance FromValue Blocks where
-  parseValue = fromList <$> parseValue
+       MetaBlocks s -> pure $ fromList s
+       z            -> throwTypeError "Blocks" z
