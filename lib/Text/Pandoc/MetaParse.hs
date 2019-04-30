@@ -388,9 +388,8 @@ infixl 4 <?>
 --
 -- Use `<?>` and `expect` as locally as possible in your parsers. In particular,
 -- use them on the individual branches of parsers made with `<|>`, not on the
--- resulting parser (`<?>` has a higher fixity than `<|>` for this reason),
--- since the `Expectation` fields of errors are merged when using `<|>` whenever
--- possible.
+-- resulting parser, since the `Expectation` fields of errors are merged when
+-- using `<|>` whenever possible.
 (<?>) :: ParseValue a -> String -> ParseValue a
 (<?>) = flip expect
 
