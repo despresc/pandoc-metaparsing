@@ -369,10 +369,10 @@ infixl 2 <?>
 -- `Expectation` in an error with @e@, keeping the received string. In detail,
 -- we have
 --
--- > throwError (MetaExpectGotError _ y) <?> x = throwError (MetaExpectGotError x y)
+-- > throwError (MetaExpectGotError _ y) <?> x = throwExpectGot x y
 -- > throwError e <?> x = throwError e
 --
--- This should work out how you would expect when used with @\<|\>@ and functions like `.?` and `.!`, since we have
+-- This should work out how you would expect when used with `<|>` and functions like `.?` and `.!`, since we have
 --
 -- > "key" .! p <?> "expect" = "key" .! (p <?> "expect")
 --
