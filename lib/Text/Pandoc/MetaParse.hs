@@ -21,8 +21,9 @@ module Text.Pandoc.MetaParse
   -- ** @MetaObject@ and @MetaValue@ parsers
   -- $metaparse
 
-  -- ** Further examples
-  -- $complicate
+-- TODO: Salvage this
+--  -- ** Further examples
+--  -- $complicate
 
   -- * Parse and result types
     Parse
@@ -53,6 +54,7 @@ module Text.Pandoc.MetaParse
   , maybeField
   , (.?!)
   , maybeF
+  , withObjectName
 
   -- ** Guarding fields
   , onlyFields
@@ -62,6 +64,7 @@ module Text.Pandoc.MetaParse
 
   , FromValue(..)
   , object
+  , objectNamed
   , fromObject
   , symbol
   , symbolFrom
@@ -84,6 +87,7 @@ module Text.Pandoc.MetaParse
   , expectationToList
   -- ** Modifying thrown errors
   , (<?>)
+  , expect
   , expectFrom
   -- ** Throwing errors
   , throwExpectGot
@@ -107,7 +111,7 @@ import           Text.Pandoc.Shared   (stringify)
 -- TODO: Go through documentation and fix it up! Make sure the examples make sense, esp. with the new error system!
 
 -- $use
--- Suppose you expect the @authors@ field of your document's `Meta` to consist of a list of @{ name: [Inline]; location: [Inline]}@ entries.
+-- Suppose you expect the @authors@ field of your document's `Meta` to consist of a list of @{ name: [Inline]; location: [Inline] }@ entries.
 -- You can create the type
 --
 -- > data Author = Author
@@ -119,14 +123,16 @@ import           Text.Pandoc.Shared   (stringify)
 -- and write the instance
 --
 -- > instance FromValue Author where
--- >   parseValue = object $ Author <$> field "name" <*> field "location"
+-- >   parseValue = objectNamed "author" $ Author <$> field "name" <*> field "location"
 --
--- Then @`parseMetaWith` (`field` "authors")@ will give a function @`Meta` -> `Result` [Author]@.
+-- Then @`parseMetaWith` (`field` "authors")@ will give a function @`Meta` ->
+-- `Result` [Author]@, and an `Error` `MetaError` result can be printed with
+-- `simpleErrorShow`.
 --
 -- There are other possibilities: you can work solely with `FromObject` and write
 --
 -- > instance FromObject Author where
--- >   parseObject = Author <$> field "name" <*> field "location"
+-- >   parseObject = withObjectName "author" $ Author <$> field "name" <*> field "location"
 -- >
 -- > instance FromObject [Author] where
 -- >   parseObject = field "authors"
@@ -148,28 +154,29 @@ import           Text.Pandoc.Shared   (stringify)
 --
 --   * In the other direction, we have the functions `object` and `fromObject` that parse the input `MetaValue` using `ParseObject` parsers.
 
--- $complicate
--- If we have a field @prefix@ that can be @no-prefix@, @{ with-prefix: string
--- }@, or be absent (with defailt @no-prefix@) then we can parse this directly
--- (and somewhat confusingly) with
---
--- > data Prefix = WithPrefix String | NoPrefix
--- >
--- > p :: ParseObject Prefix
--- > p = maybeF NoPrefix $ "prefix" .? symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") <?> "prefix: no-prefix or prefix: { with-prefix: string }"
---
--- or create instances
---
--- > instance FromValue Prefix where
--- >   parseValue = pNo <|> pWith <?> "no-prefix or { with-prefix: string }"
--- >     where
--- >       pNo   = symbol "no-prefix" NoPrefix
--- >       pWith = object $ WithPrefix <$> field "with-prefix"
--- >
--- > instance FromObject Prefix where
--- >  parseObject = "prefix" .?! NoPrefix
---
--- and have @parseMeta :: Meta -> Result Prefix@.
+-- TODO: Salvage this later
+-- -- $complicate
+-- -- If we have a field @prefix@ that can be @no-prefix@, @{ with-prefix: string
+-- -- }@, or be absent (with default @no-prefix@) then we can parse this directly
+-- -- (and somewhat confusingly) with
+-- --
+-- -- > data Prefix = WithPrefix String | NoPrefix
+-- -- >
+-- -- > p :: ParseObject Prefix
+-- -- > p = maybeF NoPrefix $ "prefix" .? symbol "no-prefix" NoPrefix <|> object (WithPrefix <$> field "with-prefix") <?> "{ with-prefix: }"
+-- --
+-- -- or create instances
+-- --
+-- -- > instance FromValue Prefix where
+-- -- >   parseValue = pNo <?> "no-prefix" <|> pWith
+-- -- >     where
+-- -- >       pNo   = symbol "no-prefix" NoPrefix
+-- -- >       pWith = expect "{ with-prefix: string }" $ object $ WithPrefix <$> field "with-prefix"
+-- -- >
+-- -- > instance FromObject Prefix where
+-- -- >  parseObject = "prefix" .?! NoPrefix
+-- --
+-- -- and have @parseMeta :: Meta -> Result Prefix@.
 
 -- | Expected values when parsing.
 
@@ -192,11 +199,11 @@ expectationFromList = Expectation . Set.fromList
 -- values will have their `Expectation` fields merged together, keeping the
 -- leftmost @Just s@.
 data MetaError
-  = MetaExpectGotError Expectation (Maybe String) -- ^ Expected: @x@, got: @Just s@ if something was present, otherwise @Nothing@.
-  | MetaFieldUnknown String          -- ^ Unknown field @k@.
-  | MetaSomeError String             -- ^ Some error, printed verbatim by `simpleErrorShow`
+  = MetaSomeError String             -- ^ Some error, printed verbatim by `simpleErrorShow`
+  | MetaExpectGotError Expectation (Maybe String) -- ^ Expected: @x@, got: @Just s@ if something was present, otherwise @Nothing@.
+  | MetaFieldUnknown String          -- ^ Unknown field: @k@.
   | MetaWhenParseError String MetaError  -- ^ Got error @e@ when parsing @k@
-  | MetaNullError                    -- ^ Thrown by `empty`
+  | MetaNullError                    -- ^ Unknown error (thrown by `empty`)
   deriving (Eq, Ord, Show)
 
 instance Semigroup MetaError where
@@ -205,13 +212,13 @@ instance Semigroup MetaError where
       mmerge (Just x) _ = Just x
       mmerge Nothing  x = x
 
+      go (MetaSomeError s) _ = MetaSomeError s
+      go _ (MetaSomeError s) = MetaSomeError s
       go (MetaExpectGotError e ms) (MetaExpectGotError e' ms') = MetaExpectGotError (e <> e') (mmerge ms ms')
       go (MetaExpectGotError e s) _ = MetaExpectGotError e s
       go _ (MetaExpectGotError e s) = MetaExpectGotError e s
       go (MetaFieldUnknown s) _ = MetaFieldUnknown s
       go _ (MetaFieldUnknown s) = MetaFieldUnknown s
-      go (MetaSomeError s) _ = MetaSomeError s
-      go _ (MetaSomeError s) = MetaSomeError s
       go (MetaWhenParseError k e) _ = MetaWhenParseError k e
       go _ (MetaWhenParseError k e) = MetaWhenParseError k e
       go MetaNullError MetaNullError = MetaNullError
@@ -229,16 +236,16 @@ showMetaValueType x = case x of
   MetaInlines _ -> "Inlines"
   MetaBlocks _  -> "Blocks"
 
--- | Display errors roughly as described in `MetaError`. For
--- `MetaExpectGotError`, the `Expectation` will be a comma-separated list and the
--- @got: s@ will be printed on a new line. For `MetaFieldError e f`, we first
--- display `simpleErrorShow e`, then print @when parsing field f@ on a new line.
+-- | Display errors roughly as described in `MetaError`.
+--
+--   * For `MetaExpectGotError`, the `Expectation` will be a comma-separated list after a printed @Expected: @ and the @got: s@ will be printed on a new line if the result is present.
+--   * For `MetaWhenParsingError e f`, we first display `simpleErrorShow e`, then print @when parsing: f@ on a new line.
 simpleErrorShow :: MetaError -> String
 simpleErrorShow x = case x of
-  MetaExpectGotError e m -> "Expecting: " <> showExp e <> "\n" <> fromM m
-  MetaFieldUnknown f     -> "Unknown field " <> f
+  MetaExpectGotError e m -> "Expected: " <> showExp e <> "\n" <> fromM m
+  MetaFieldUnknown f     -> "Unknown field: " <> f
   MetaSomeError e        -> e
-  MetaWhenParseError k e     -> simpleErrorShow e <> "\nwhen parsing " <> k
+  MetaWhenParseError k e     -> simpleErrorShow e <> "\nwhen parsing: " <> k
   MetaNullError          -> "Unknown error"
   where
     showExp = intercalate ", " . expectationToList
@@ -379,15 +386,11 @@ infixl 4 <?>
 -- > throwError (MetaExpectGotError _ y) <?> x = throwExpectGot x y
 -- > throwError e <?> x = throwError e
 --
--- This should work how you would expect when used with functions like `.?` and `.!`, since we have
---
--- > "key" .! p <?> "expect" = "key" .! (p <?> "expect")
---
--- so key errors will be preserved and all errors from chained `MetaValue`
--- parsers will be overwritten. Try to use `<?>` and `expect` on the individual
--- branches of parsers made using `<|>` (`<?>` has a higher fixity than `<|>`
--- for this reason), since the `Expectation` fields of errors are merged
--- together if possible.
+-- Use `<?>` and `expect` as locally as possible in your parsers. In particular,
+-- use them on the individual branches of parsers made with `<|>`, not on the
+-- resulting parser (`<?>` has a higher fixity than `<|>` for this reason),
+-- since the `Expectation` fields of errors are merged when using `<|>` whenever
+-- possible.
 (<?>) :: ParseValue a -> String -> ParseValue a
 (<?>) = flip expect
 
@@ -401,6 +404,14 @@ expectFrom e = flip catchError go
   where
     go (MetaExpectGotError _ g) = throwError $ MetaExpectGotError (expectationFromList e) g
     go x                        = throwError x
+
+-- | Wraps the errors thrown by the parser in a `MetaWhenParseError` using the
+-- supplied string. Used in `objectNamed` and useful when writing `FromObject`
+-- instances that might benefit from an annotated error.
+withObjectName :: String -> ParseObject a -> ParseObject a
+withObjectName s = flip catchError go
+  where
+    go = throwError . MetaWhenParseError s
 
 -- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@.
 charLike :: ParseValue Char
@@ -493,6 +504,14 @@ weakBlocks = liftResult go
 -- @MetaValue@ is not a @MetaMap@.
 object :: ParseObject a -> ParseValue a
 object act = metaMap >>= embedResult . runParse act . MetaObject
+
+-- | Run a @MetaObject@ parser as a @MetaValue@ parser, wrapping thrown errors
+-- in a @MetaWhenParseError@ using the supplied string, and throwing a type error
+-- using the supplied string if the @MetaValue@ is not a `MetaMap`. If your
+-- `ParseObject` parser already uses `withObjectName` then this may result in
+-- redundant error information.
+objectNamed :: String -> ParseObject a -> ParseValue a
+objectNamed n = object . withObjectName n
 
 -- | Expect a @MetaMap@, parsing it as @MetaObject@.
 fromObject :: FromObject a => ParseValue a
