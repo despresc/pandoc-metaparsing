@@ -596,10 +596,10 @@ class FromObject a where
 --
 -- Note that we parse a @MetaValue@ as a @String@, @[Inline]@, or @[Block]@
 -- /only when/ it is a @MetaString@, @MetaInlines@, or @MetaBlocks@,
--- respectively. This remark applies to the parsing of @Inlines@, @Blocks@, and
--- @Text@. If you also want a @MetaList@ to parse as one of these if all of its
--- entries parse as either @Char@, @Inline@, or @Block@, then use `weakString`,
--- `weakInlines`, or `weakBlocks`.
+-- respectively. This remark applies to the parsing of @Text@, @Inlines@, and
+-- @Blocks@. If you also want a @MetaList@ to parse as one of these if all of
+-- its entries parse as either @Char@, @Inline@, or @Block@, then use
+-- `weakString`, `weakInlines`, or `weakBlocks`.
 --
 -- No @Map String MetaValue@ or @MetaObject@ instance is given. Use functions
 -- like `object`, `fromObject`, and `field` instead. Use `metaMap` if you are
