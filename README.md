@@ -59,6 +59,9 @@ class FromValue a where
 object p :: ParseValue a
 -- Expect the input to be a MetaMap, parsing it with the given p :: MetaObject parser.
 
+p <?> s :: ParseValue a
+-- Replace what was expected from the ParseValue parser p with the string s.
+
 f .! p :: ParseObject a
 -- Expect the field f of the input MetaObject to be set, parsing its value with the p :: ParseValue a parser
 
