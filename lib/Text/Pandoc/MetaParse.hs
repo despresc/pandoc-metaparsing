@@ -187,7 +187,7 @@ expectationFromList = Expectation . Set.fromList
 -- constructors that appear earlier in the declaration, and that are leftmost if
 -- the constructors are the same. The exception is that two `MetaExpectGotError`
 -- values will have their `Expectation` fields merged together, keeping the
--- leftmost @String@.
+-- leftmost @Just s@.
 data MetaError
   = MetaExpectGotError Expectation (Maybe String) -- ^ Expected: @x@, got: @Just s@ if something was present, otherwise @Nothing@.
   | MetaFieldUnknown String          -- ^ Unknown field @k@.
