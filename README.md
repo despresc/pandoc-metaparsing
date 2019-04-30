@@ -51,6 +51,8 @@ and `object` linking the two together. Note that `MetaObject` is a newtype
 wrapper over `Map String MetaValue`, since we think of `MetaMap` as being a YAML
 object, its keys being fields.
 
+A sample of commonly used parsers and combinators from the library is given below.
+
 ```haskell
 class FromValue a where
   parseValue :: ParseValue a
@@ -98,6 +100,12 @@ String` representing what was received. The `Monoid` instance of `MetaError` and
 the `Alternative` instance of `Parse i` are written so that `Expectation` fields
 of errors are combined when possible.
 
-The field parsing functions like `field k` and `(k .!)` automatically catch errors
-thrown by their parsers and wrap them in a `MetaWhenParseError k`, adding some
-positional information to errors that is used by `simpleErrorShow`.
+The field parsing functions like `field k` and `(k .!)` automatically catch
+errors thrown by their parsers and wrap them in a `MetaWhenParseError ("field "
+<> k)`. This adds simple positional information to errors. There are also the
+`objectNamed :: FromObject a => String -> ParseValue a` and `withObjectName ::
+String -> ParseObject a -> ParseObject a` functions that take their string
+argument `s` and wrap thrown errors from their parsers in `MetaWhenParseError
+s`. Some care is required: if a `FromObject` parser already names its output
+using something like `withObjectName`, then using `objectNamed` will most likely
+add redundant information to errors.
