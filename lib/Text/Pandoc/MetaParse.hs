@@ -36,6 +36,7 @@ module Text.Pandoc.MetaParse
   , runParseValue
   , runParseObject
   , parseMeta
+  , parseMetaField
   , parseMetaWith
 
   -- * Parsing @MetaObject@ and @MetaValue@ values
@@ -356,6 +357,10 @@ parseMetaWith :: ParseObject a -> Meta -> Result a
 parseMetaWith act = runParse act . rewrap
   where
     rewrap (Meta m) = MetaObject m
+
+-- | Read a field of `Meta` using its `FromValue` instance.
+parseMetaField :: FromValue a => String -> Meta -> Result a
+parseMetaField = parseMetaWith . field
 
 -- | Embed a `Result` in a `Parse` action.
 embedResult :: Result a -> Parse i a
