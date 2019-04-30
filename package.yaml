@@ -1,9 +1,9 @@
 name:                pandoc-metaparsing
 version:             0.1.0.0
-# github:              "githubuser/pandoc-metaparsing"
+github:              "githubuser/pandoc-metaparsing"
 license:             MIT
-author:              "Christian Despres"
-# maintainer:          "example@example.com"
+author:              Christian Despres
+maintainer:          Christian Despres <christian.despres1@gmail.com>
 copyright:           "2019 Christian Despres"
 
 extra-source-files:
@@ -17,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-# description:         Please see the README on GitHub at <https://github.com/githubuser/pandoc-metaparsing#readme>
+description:         Please see the README on GitHub at <https://github.com/despresc/pandoc-metaparsing#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -26,6 +26,7 @@ dependencies:
 - mtl
 - text
 - containers
+- hspec
 
 library:
   source-dirs: lib

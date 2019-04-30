@@ -84,7 +84,7 @@ module Text.Pandoc.MetaParse
   , expectationToList
   -- ** Modifying thrown errors
   , (<?>)
-  , expect
+  , expectFrom
   -- ** Throwing errors
   , throwExpectGot
   , throwTypeError
@@ -265,7 +265,7 @@ throwExpectGot e v = throwError $ MetaExpectGotError (expectationFromList [e]) v
 data Result a
   = Error MetaError
   | Success a
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 -- | Combines two @Success@ values with @<>@
 instance Semigroup a => Semigroup (Result a) where
@@ -370,35 +370,36 @@ embedResult = Parse . ReaderT . const
 liftResult :: (i -> Result a) -> Parse i a
 liftResult = Parse . ReaderT
 
-infixl 2 <?>
+infixl 4 <?>
 
 -- | In @act \<?\> s@, modify errors thrown from @act@ by replacing the
--- `Expectation` in an error with @e@, keeping the received string. In detail,
--- we have
+-- `Expectation` in an error with @e@, keeping the received string if it exists.
+-- In detail, we have
 --
 -- > throwError (MetaExpectGotError _ y) <?> x = throwExpectGot x y
 -- > throwError e <?> x = throwError e
 --
--- This should work out how you would expect when used with `<|>` and functions like `.?` and `.!`, since we have
+-- This should work how you would expect when used with functions like `.?` and `.!`, since we have
 --
 -- > "key" .! p <?> "expect" = "key" .! (p <?> "expect")
 --
--- and
---
--- > p <|> q <?> "expect" = (p <|> q) <?> "expect"
---
 -- so key errors will be preserved and all errors from chained `MetaValue`
--- parsers will be overwritten. If you are using `simpleErrorShow` to show
--- errors then an expectation should be a simple comma-separated list, like
--- @"expect one, expect two"@.
+-- parsers will be overwritten. Try to use `<?>` and `expect` on the individual
+-- branches of parsers made using `<|>` (`<?>` has a higher fixity than `<|>`
+-- for this reason), since the `Expectation` fields of errors are merged
+-- together if possible.
 (<?>) :: ParseValue a -> String -> ParseValue a
 (<?>) = flip expect
 
--- | Flipped `<?>`.
+-- | Flipped `<?>`
 expect :: String -> ParseValue a -> ParseValue a
-expect e = flip catchError go
+expect = expectFrom . (:[])
+
+-- | Like `<?>`, but allowing multiple expected values.
+expectFrom :: [String] -> ParseValue a -> ParseValue a
+expectFrom e = flip catchError go
   where
-    go (MetaExpectGotError _ g) = throwError $ MetaExpectGotError (expectationFromList [e]) g
+    go (MetaExpectGotError _ g) = throwError $ MetaExpectGotError (expectationFromList e) g
     go x                        = throwError x
 
 -- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@.

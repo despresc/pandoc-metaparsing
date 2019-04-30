@@ -7,36 +7,36 @@ Library for parsing [Pandoc](https://github.com/jgm/pandoc) `Meta` metadata.
 If you expect YAML metadata in your document with the scheme
 
 ```yaml
-authors: [ { name: [Inline];
-             location: [Inline];
-             title : (no-title | [Inline]) } ]
+contributors: [ { name: [Inline];
+                  location: [Inline];
+                  title : (no-title | [Inline]) } ]
 ```
 
 you can write Haskell types
 
 ```haskell
-data AuthorTitle = NoTitle | AuthorTitle [Inline]
+data ContribTitle = NoTitle | ContribTitle [Inline]
 
-data Author = Author
+data Contributor = Contributor
   { name :: [Inline]
   , location :: [Inline]
   , title :: AuthorTitle
   }
 
-type Authors = [Author]
+type Contributors = [Contributor]
 ```
 
 and write instances of `FromValue`
 
 ```haskell
-instance FromValue AuthorTitle where
-  parseValue = symbol "no-title"  NoTitle <|> AuthorTitle <$> parseValue <?> "no-title, inline title"
+instance FromValue ContributorTitle where
+  parseValue = symbol "no-title"  NoTitle <|> ContributorTitle <$> parseValue <?> "no-title, inline title"
 
-instance FromValue Author where
-  parseValue = object $ Author <$> field "name" <*> field "location" <*> ("title" .!? NoTitle)
+instance FromValue Contributor where
+  parseValue = object $ Contributor <$> field "name" <*> field "location" <*> "title" .?! NoTitle
 ```
 
-so that `parseMetaField "authors"` will return either `Error MetaError` or
+so that `parseMetaField "contributors"` will return either `Error MetaError` or
 `Success Authors`. We've used `.!?` to parse the possibly-not-present `title`
 field by giving it the default value `NoTitle`.
 
@@ -70,6 +70,12 @@ f .? p :: ParseObject (Maybe a)
 
 field f :: ParseObject a
 -- Expect the field f to be set, parsing its value with parseValue
+
+onlyFields fs p :: ParseObject a
+-- Require before executing p :: ParseObject a that the object 
+-- only have fields that are listed in fs :: [String].
+-- Useful for detecting user error when fields can have default values
+-- (otherwise a misspelled field name might be silently ignored)
 
 f .?! a :: ParseObject a
 -- Parse the value of the field f with parseValue if it is present. Otherwise return a.
