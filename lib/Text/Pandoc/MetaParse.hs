@@ -77,18 +77,19 @@ module Text.Pandoc.MetaParse
   , liftResult
   -- * Errors
   , MetaError(..)
+  , Expectation(..)
+  , expectationFromList
+  , expectationToList
   -- ** Modifying thrown errors
   , (<?>)
   , expect
   -- ** Throwing errors
-  , throwTypeError
   , throwExpectGot
-  , throwExpect
+  , throwTypeError
   ) where
 
 import           Control.Applicative
 import           Control.Monad.Except
-import qualified Control.Monad.Fail   as Fail
 import           Control.Monad.Reader
 import           Data.List            (intercalate)
 import           Data.Map             (Map)
@@ -166,15 +167,50 @@ import           Text.Pandoc.Shared   (stringify)
 --
 -- and have @parseMeta :: Meta -> Result Prefix@.
 
--- | Possible errors during parsing
+-- | Expected values when parsing.
+
+newtype Expectation = Expectation
+  { unExpectation :: Set.Set String
+  } deriving (Eq, Ord, Show, Semigroup, Monoid)
+
+expectationToList :: Expectation -> [String]
+expectationToList = Set.toList . unExpectation
+
+expectationFromList :: [String] -> Expectation
+expectationFromList = Expectation . Set.fromList
+
+-- | Possible errors during parsing. The `Semigroup` instance determines how the
+-- errors are combined with `\<|\>`. Briefly, we prefer to keep constructors
+-- that appear earlier in the declaration and are leftmost if the constructors
+-- are the same. The exception is that two `MetaExpectGot` values will have
+-- their `Expectation` fields merged together, keeping the leftmost @String@.
 data MetaError
-  = MetaExpectGotError String String -- ^ Expected @x@, got @y@
-  | MetaExpectError String           -- ^ Expected @x@
+  = MetaExpectGotError Expectation (Maybe String) -- ^ Expected @x@; got @Just s@ if something was present, otherwise @Nothing@.
+  | MetaFieldUnknown String   -- ^ Field should not be present
+  | MetaSomeError String             -- ^ Some error
   | MetaFieldError String MetaError  -- ^ In field @k@, had error @e@
-  | MetaUnknownField String          -- ^ Unexpected field @k@
-  | MetaFieldNotPresent              -- ^ Field @k@ should be present
-  | MetaSomeError String             -- ^ Other errors
+  | MetaNullError                    -- ^ Thrown by `empty`
   deriving (Eq, Ord, Show)
+
+instance Semigroup MetaError where
+  (<>) = go
+    where
+      mmerge (Just x) _ = Just x
+      mmerge Nothing  x = x
+
+      go (MetaExpectGotError e ms) (MetaExpectGotError e' ms') = MetaExpectGotError (e <> e') (mmerge ms ms')
+      go (MetaExpectGotError e s) _ = MetaExpectGotError e s
+      go _ (MetaExpectGotError e s) = MetaExpectGotError e s
+      go (MetaFieldUnknown s) _ = MetaFieldUnknown s
+      go _ (MetaFieldUnknown s) = MetaFieldUnknown s
+      go (MetaSomeError s) _ = MetaSomeError s
+      go _ (MetaSomeError s) = MetaSomeError s
+      go (MetaFieldError k e) _ = MetaFieldError k e
+      go _ (MetaFieldError k e) = MetaFieldError k e
+      go MetaNullError MetaNullError = MetaNullError
+
+instance Monoid MetaError where
+  mempty = MetaNullError
 
 -- | Show the branch of the argument. Used for type errors.
 showMetaValueType :: MetaValue -> String
@@ -193,20 +229,14 @@ throwTypeError :: MonadError MetaError m
                => String -- ^ What was expected.
                -> MetaValue -- ^ What was received
                -> m a
-throwTypeError s = throwError . MetaExpectGotError s . showMetaValueType
+throwTypeError s = throwExpectGot s . Just . showMetaValueType
 
--- | Throw an expectation error if we can show what we received.
+-- | Throw an expectation error.
 throwExpectGot :: MonadError MetaError m
                => String -- ^ What was expected.
-               -> String -- ^ What was received.
+               -> Maybe String -- ^ What was received.
                -> m a
-throwExpectGot e = throwError . MetaExpectGotError e
-
--- | Throw an expectation error if there is not a good way of showing what we received.
-throwExpect :: MonadError MetaError m
-            => String -- ^ What was expected.
-            -> m a
-throwExpect = throwError . MetaExpectError
+throwExpectGot e v = throwError $ MetaExpectGotError (expectationFromList [e]) v
 
 -- | The result of a parse.
 data Result a
@@ -241,13 +271,11 @@ instance MonadError MetaError Result where
   catchError z@(Success _) _ = z
   catchError (Error e) f     = f e
 
-instance Fail.MonadFail Result where
-  fail = throwError . MetaSomeError
-
 instance Alternative Result where
-  empty = Fail.fail "empty"
-  Success z     <|> _ = Success z
-  Error _       <|> x = x
+  empty = throwError MetaNullError
+  Success z <|> _ = Success z
+  _ <|> Success z = Success z
+  Error x <|> Error y = Error (x <> y)
 
 instance MonadPlus Result where
 
@@ -317,12 +345,12 @@ liftResult = Parse . ReaderT
 
 infixl 2 <?>
 
--- | In @act \<?\> s@, bluntly modify errors thrown from @act@ by replacing the
+-- | In @act \<?\> s@, modify errors thrown from @act@ by replacing the
 -- expectation string in an error with @e@, keeping the received string. In detail,
 -- we have
 --
 -- > throwError (MetaExpectGotError _ y) <?> x = throwError (MetaExpectGotError x y)
--- > throwError _                        <?> x = throwError (MetaExpectError x)
+-- > throwError e <?> x = throwError e
 --
 -- This should work out how you would expect when used with @\<|\>@ and functions like `.?` and `.!`, since we have
 --
@@ -333,17 +361,15 @@ infixl 2 <?>
 -- > p <|> q <?> "expect" = (p <|> q) <?> "expect"
 --
 -- so key errors will be preserved and all errors from chained `MetaValue` parsers will be overwritten.
-(<?>) :: MonadError MetaError m => m a -> String -> m a
+(<?>) :: ParseValue a -> String -> ParseValue a
 (<?>) = flip expect
 
 -- | Flipped `<?>`.
-expect :: MonadError MetaError m => String -> m a -> m a
+expect :: String -> ParseValue a -> ParseValue a
 expect e = flip catchError go
   where
-    go (MetaExpectGotError _ g) = throwExpectGot e g
-    go (MetaFieldError k _)     = throwError $ MetaFieldError k (MetaExpectError e)
-    go _                        = throwExpect e
-
+    go (MetaExpectGotError _ g) = throwError $ MetaExpectGotError (expectationFromList [e]) g
+    go x                        = throwError x
 
 -- | Succeeds on @MetaString [x]@ and @MetaInlines [Str x]@.
 charLike :: ParseValue Char
@@ -380,7 +406,7 @@ symbolFrom tbl = symbolLike >>= lookStr
     err = intercalate ", " . fmap fst $ tbl
     lookStr x = case lookup x tbl of
       Just a  -> pure a
-      Nothing -> throwExpectGot err x
+      Nothing -> throwExpectGot err (Just x)
 
 -- | Succeeds on `MetaMap`. You most likely want to use functions like `object`, `fromObject`, and `.!` instead of this function.
 metaMap :: ParseValue (Map String MetaValue)
@@ -451,14 +477,14 @@ onlyFields = (>>) . go . Set.fromList
       fs <- Map.keysSet . unObject <$> inspect
       case Set.toList (fs `Set.difference` ks) of
         []    -> pure ()
-        (x:_) -> throwError (MetaUnknownField x)
+        (x:_) -> throwError (MetaFieldUnknown x)
 
 -- | Throw a @MetaFieldUnknown@ error if the given field is present.
 guardNoField :: String -> ParseObject ()
 guardNoField k = inspect >>= go . lookupMetaObject k
   where
     go Nothing  = pure ()
-    go (Just _) = throwError (MetaUnknownField k)
+    go (Just _) = throwError (MetaFieldUnknown k)
 
 -- $field
 -- Note that all of these functions wrap thrown errors during the parsing of a
@@ -483,7 +509,7 @@ infixr 1 .!
 (.!) :: String -> ParseValue a -> ParseObject a
 k .! act = (k .? act) >>= go
   where
-    go Nothing  = throwError $ MetaFieldError k MetaFieldNotPresent
+    go Nothing  = throwError $ MetaExpectGotError (expectationFromList ["present field " <> k]) Nothing
     go (Just a) = pure a
 
 -- | Parse the value of a field, throwing an error if it is not present.
@@ -565,7 +591,7 @@ instance FromValue Char where
   parseValue = liftResult go
     where
       go (MetaString [x]) = pure x
-      go (MetaString _)   = throwExpect "String of length 1"
+      go (MetaString s)   = throwExpectGot "Char" (Just s)
       go z                = throwTypeError "Char" z
   parseListValue = liftResult go
     where
@@ -579,7 +605,7 @@ instance FromValue Inline where
     where
       go x = case x of
         MetaInlines [y] -> pure y
-        MetaInlines _   -> throwExpect "Inlines of length 1"
+        MetaInlines _   -> throwExpectGot "Inlines of length 1" Nothing
         z               -> throwTypeError "Inline" z
   parseListValue = liftResult go
     where
@@ -593,7 +619,7 @@ instance FromValue Block where
    where
      go x = case x of
        MetaBlocks [y] -> pure y
-       MetaBlocks _   -> throwExpect "Blocks of length 1"
+       MetaBlocks _   -> throwExpectGot "Blocks of length 1" Nothing
        z              -> throwTypeError "Block" z
   parseListValue = liftResult go
     where
