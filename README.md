@@ -9,7 +9,8 @@ traditional parsers (unlike Aeson), and the error type used is more complex.
 
 ## Example
 
-If you expect YAML metadata in your document with the scheme
+If you expect the metadata of your document to have the field `contributors`
+with the scheme
 
 ```yaml
 contributors:
