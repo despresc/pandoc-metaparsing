@@ -32,6 +32,7 @@ module Text.Pandoc.MetaParse
   , runParse
   , runParseMeta
   , fromMeta
+  , fromValue
   , fromObject
   , fromMetaField
 
