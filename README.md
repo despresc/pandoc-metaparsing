@@ -7,9 +7,10 @@ Library for parsing [Pandoc](https://github.com/jgm/pandoc) `Meta` metadata.
 If you expect YAML metadata in your document with the scheme
 
 ```yaml
-contributors: [ { name: [Inline];
-                  location: [Inline];
-                  title : (no-title | [Inline]) } ]
+contributors:
+- name: [Inline]
+  location: [Inline]
+  title: (no-title | [Inline])
 ```
 
 you can write Haskell types
