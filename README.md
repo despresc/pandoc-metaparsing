@@ -1,11 +1,17 @@
 # Pandoc Meta Parsing
 
-Library for parsing [Pandoc](https://github.com/jgm/pandoc) `Meta` metadata.
-Similar in some respects to the JSON parsing facilities of
+Library for parsing [Pandoc](https://github.com/jgm/pandoc) `Meta` metadata. The
+design is similar in some respects to the JSON parsing facilities of
 [aeson](http://hackage.haskell.org/package/aeson), but reflects the different
 nature of the Pandoc `MetaValue` type and some different design decisions. In
-particular, the parsers in the library have a notion of "current input" like
-traditional parsers (unlike Aeson), and the error type used is more complex.
+particular, the error type is more complex (using a mechanism of "expected
+values" similar to megaparsec), and the parsers in the library have a notion of
+"current input", in contrast to the JSON `Object` parsers of aeson. However,
+unlike usual parsers the input is a _value_ and not a _stream_ (since objects
+with fields don't have a defined forward direction), and so the current input
+has to be advanced deeper into composite objects manually. The `FromValue` and
+`FromObject` classes and various predefined parsers and combinators should make
+this process relatively painless.
 
 ## Example
 
@@ -107,9 +113,9 @@ symbollike :: ParseValue String
 
 The basic error returned by most parsers is a `MetaExpectGotError e ms`,
 consisting of a set `e :: Expectation` of expected values and an `ms :: Maybe
-String` representing what was received. The `Monoid` instance of `MetaError` and
-the `Alternative` instance of `Parse i` are written so that `Expectation` fields
-of errors are combined when possible.
+MetaErrorMessage` representing what was received. The `Monoid` instance of
+`MetaError` and the `Alternative` instance of `Parse i` are written so that
+`Expectation` fields of errors are combined when possible.
 
 The field parsing functions like `field k` and `(k .!)` automatically catch
 errors thrown by their parsers and wrap them in a `MetaWhenParseError ("field "

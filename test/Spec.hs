@@ -43,13 +43,13 @@ main = hspec $ do
         toSource x y z = insert "name" x . insert "location" y . maybe id (insert "title") z $ mempty
         sourceMeta = setMeta "contributors" [ toSource nameS locationS Nothing
                                             , toSource nameW locationW (Just titleW) ] nullMeta
-        invalidTitle1 = MetaString "foo"
-        invalidMeta = setMeta "contributors" [ toSource (toMetaValue nameS) (toMetaValue locationS) (Just invalidTitle1)] nullMeta
+        invalidTitle = MetaString "foo"
+        invalidMeta = setMeta "contributors" [ toSource (toMetaValue nameS) (toMetaValue locationS) (Just invalidTitle)] nullMeta
         invalidMeta' = setMeta "contributors" [ insert "foo" (str "thing") $ toSource nameS locationS Nothing ] nullMeta
         expectedError = MetaWhenParseError "field contributors" . MetaWhenParseError "field title" . MetaExpectGotError (expectationFromList [ "no-title", "inline title"])
     it "parses valid contributors" $
       fromMetaField "contributors" sourceMeta `shouldBe` Success [expectS, expectW]
     it "throws correctly on one invalid title field" $
-      (fromMetaField "contributors" invalidMeta :: Result Contributors) `shouldBe` Error (expectedError (Just "foo"))
+      (fromMetaField "contributors" invalidMeta :: Result Contributors) `shouldBe` Error (expectedError (toMetaErrorMessage "unexpected symbol foo"))
     it "throws correctly if there are unxpected fields" $
       (fromMetaField "contributors" invalidMeta' :: Result Contributors) `shouldBe` Error (MetaWhenParseError "field contributors" $ MetaFieldUnknown "foo")
