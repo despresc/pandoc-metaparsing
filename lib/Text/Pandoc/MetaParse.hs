@@ -504,8 +504,6 @@ guardNoField k = inspect >>= go . lookupMetaObject k
 -- field @k@ in @MetaErrorField k@. The ones that expect a field to be present
 -- throw a @MetaErrorField k MetaFieldNotPresent@ error if it is not.
 
-infixr 5 .?
-
 -- | Run a @MetaValue@ parser on a field if it is present, returning @Just@ the
 -- result, and returning @Nothing@ if it is not present.
 (.?) :: String -> ParseValue a -> ParseObject (Maybe a)
@@ -514,8 +512,6 @@ k .? act = (inspect >>= go . lookupMetaObject k) `catchError` wraperr
     go Nothing  = pure Nothing
     go (Just x) = fmap Just . embedResult $ runParse act x
     wraperr e = throwError $ MetaWhenParseError ("field " <> k) e
-
-infixr 5 .!
 
 -- | Run a @MetaValue@ parser on a field, throwing an error if it is not
 -- present.
