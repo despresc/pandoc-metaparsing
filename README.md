@@ -7,11 +7,11 @@ nature of the Pandoc `MetaValue` type and some different design decisions. In
 particular, the error type is more complex (using a mechanism of "expected
 values" similar to megaparsec), and the parsers in the library have a notion of
 "current input", in contrast to the JSON `Object` parsers of aeson. However,
-unlike usual parsers the input is a _value_ and not a _stream_ (since objects
+unlike normal parsers the input is a _value_ and not a _stream_ (since objects
 with fields don't have a defined forward direction), and so the current input
 has to be advanced deeper into composite objects manually. The `FromValue` and
-`FromObject` classes and various predefined parsers and combinators should make
-this process relatively painless.
+`FromObject` classes and various predefined parsers and combinators make this
+process relatively painless.
 
 ## Example
 
@@ -118,8 +118,8 @@ MetaErrorMessage` representing what was received. The `Monoid` instance of
 `Expectation` fields of errors are combined when possible.
 
 The field parsing functions like `field k` and `(k .!)` automatically catch
-errors thrown by their parsers and wrap them in a `MetaWhenParseError ("field "
-<> k)`. This adds simple positional information to errors. There are also the
+errors thrown by their parsers and wrap them in `MetaWhenParseError ("field " <>
+k)`. This adds simple positional information to errors. There are also the
 `objectNamed :: FromObject a => String -> ParseValue a` and `withObjectName ::
 String -> ParseObject a -> ParseObject a` functions that take their string
 argument `s` and wrap thrown errors from their parsers in `MetaWhenParseError
