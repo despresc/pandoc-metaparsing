@@ -19,7 +19,7 @@ data ContributorTitle = NoTitle | HasTitle Inlines
 
 data Contributor = Contributor
   { name :: Inlines
-  , location :: [Inline] -- Not Inlines, to show off .! and fromInlines
+  , location :: [Inline] -- Not Inlines, to show off .! and parseInlines
   , title :: ContributorTitle
   }
 
@@ -35,13 +35,13 @@ instance FromValue ContributorTitle where
 
 instance FromValue Contributor where
   parseValue = objectNamed "contributor" $
-    Contributor <$> field "name" <*> "location" .! fromInlines <*> "title" .?! NoTitle
+    Contributor <$> field "name" <*> "location" .! parseInlines <*> "title" .?! NoTitle
 ```
 
 so that `fromMetaField "contributors"` will return either `Error MetaError` or
 `Success Contributors`. We've used `.!?` to parse the possibly-not-present
 `title` field by giving it the default value `NoTitle`, and `.!` to parse the
-field of an object with an explicit parser `fromInlines`.
+field of an object with an explicit parser `parseInlines`.
 
 ## Meta parser reference
 

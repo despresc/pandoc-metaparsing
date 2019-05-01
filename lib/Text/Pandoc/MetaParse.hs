@@ -112,23 +112,27 @@ import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 -- | [Inline]) }@ entries, with the @title@ field having the default @no-title@
 -- if it is not present. You can create the types
 --
--- > data ContributorTitle = NoTitle | HasTitle Inlines
--- >
--- > data Contributor = Contributor
--- >   { name     :: Inlines
--- >   , location :: [Inline] -- Not Inlines, to show off .! and fromInlines
--- >   , title    :: ContributorTitle
--- >   }
+-- @
+--   data ContributorTitle = NoTitle | HasTitle Inlines
+--
+--   data Contributor = Contributor
+--     { name     :: Inlines
+--     , location :: [Inline] -- Not Inlines, to show off `.!` and `parseInlines`
+--     , title    :: ContributorTitle
+--     }
+-- @
 --
 -- and write the instances
 --
--- > instance FromValue ContributorTitle where
--- >   parseValue = symbol "no-title" NoTitle <|>
--- >                HasTitle <$> parseValue <?> "inline title"
--- >
--- > instance FromValue Contributor where
--- >   parseValue = objectNamed "contributor" $
--- >     Contributor <$> field "name" <*> ("location" .! fromInlines) <*> "title" .?! NoTitle
+-- @
+--   instance `FromValue` ContributorTitle where
+--     `parseValue` = `symbol` "no-title" NoTitle \<|\>
+--                  HasTitle \<$\> `parseValue` `<?>` "inline title"
+--
+--   instance `FromValue` Contributor where
+--     `parseValue` = `objectNamed` "contributor" $
+--       Contributor \<$\> `field` "name" \<*\> "location" `.!` `parseInlines` \<*\> "title" `.?!` NoTitle
+-- @
 --
 -- Then @`runParseMeta` (`field` "contributors")@ will give a function @`Meta`
 -- -> `Result` [Contributor]@. Thrown errors contain basic positional
@@ -137,13 +141,15 @@ import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 --
 -- There are other possibilities: you can write `FromObject` instances like
 --
--- > instance FromObject Author where
--- >   parseObject = withObjectName "contributor" $
--- >     Author <$> field "name" <*> "location" .! fromInlines <*> "title" .?! NoTitle
--- >     -- assuming that the ContributorTitle instance is still around
--- >
--- > instance FromObject [Contributor] where
--- >   parseObject = field "contributors"
+-- @
+--   instance `FromObject` Author where
+--     `parseObject` = `withObjectName` "contributor" $
+--       Author \<$\> `field` "name" \<*\> "location" `.!` parseInlines \<*\> "title" `.?!` NoTitle
+--       -- assuming that the ContributorTitle instance is still around
+--
+--   instance `FromObject` [Contributor] where
+--     `parseObject` = `field` "contributors"
+-- @
 --
 -- and use `fromMeta` for a @`Meta` -> `Result` [Contributor]@ function. Parsers can be
 -- written with varying levels of `FromValue` and `FromObject` use.
