@@ -1,6 +1,11 @@
 # Pandoc Meta Parsing
 
 Library for parsing [Pandoc](https://github.com/jgm/pandoc) `Meta` metadata.
+Similar in some respects to the JSON parsing facilities of
+[aeson](http://hackage.haskell.org/package/aeson), but reflects the different
+nature of the Pandoc `MetaValue` type and some different design decisions. In
+particular, the parsers in the library have a notion of "current input" like
+traditional parsers (unlike Aeson), and the error type used is more complex.
 
 ## Example
 
