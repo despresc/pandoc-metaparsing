@@ -103,9 +103,6 @@ import qualified Data.Text            as Text
 import           Text.Pandoc.Definition
 import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 
--- TODO: Go through documentation and fix it up! Make sure the examples make sense, esp. with the new error system!
--- TODO: Fix up below with markup in the code blocks!
-
 -- $use
 -- Suppose you expect the @contributors@ field of your document's `Meta` to
 -- consist of a list of @{ name: [Inline]; location: [Inline]; title: (no-title
