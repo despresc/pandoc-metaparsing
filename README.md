@@ -58,38 +58,42 @@ class FromValue a where
   parseValue :: ParseValue a
   -- Parse the input MetaValue with the given instance, returning a type a.
   parseListValue :: ParseValue [a]
-  -- By default, expect a MetaList of values that parse as the type a with the parseValue instance.
-  -- Used for the String, Inline, and Block instances. See the note on list instances below.
+  -- By default, expect a MetaList of values that parse as the type a with the
+  -- parseValue instance. Used for the String, Inline, and Block instances. See
+  -- the note on list instances below.
 
 object p :: ParseValue a
--- Expect the input to be a MetaMap, parsing it with the given p :: MetaObject parser.
+-- Expect the input to be a MetaMap, parsing it with the given p :: MetaObject
+-- parser.
 
 p <?> s :: ParseValue a
 -- Replace what was expected from the ParseValue parser p with the string s.
 
 f .! p :: ParseObject a
--- Expect the field f of the input MetaObject to be set, parsing its value with the p :: ParseValue a parser
+-- Expect the field f of the input MetaObject to be set, parsing its value with
+-- the p :: ParseValue a parser
 
 f .? p :: ParseObject (Maybe a)
--- Parse the field f with p :: ParseValue a if it is present, returning Just the result. Otherwise return Nothing.
+-- Parse the field f with p :: ParseValue a if it is present, returning Just the
+-- result. Otherwise return Nothing.
 
 field f :: ParseObject a
 -- Expect the field f to be set, parsing its value with parseValue
 
 onlyFields fs p :: ParseObject a
--- Require before executing p :: ParseObject a that the object
--- only have fields that are listed in fs :: [String].
--- Useful for detecting user error when fields can have default values
--- (otherwise a misspelled field name might be silently ignored)
+-- Require before executing p :: ParseObject a that the object only have fields
+-- that are listed in fs :: [String]. Useful for detecting user error when
+-- fields can have default values (otherwise a misspelled field name might be
+-- silently ignored)
 
 f .?! a :: ParseObject a
 -- Parse the value of the field f with parseValue if it is present. Otherwise return a.
 
 symbolLike :: ParseValue String
--- Expect the input to be MetaString s (returning s), or MetaInlines [Str s] (returning s).
--- Useful when the input is a symbol standing for an option, like the no-title above,
--- and you do not want to require the user to enclose the option in quotation marks.
--- Used in symbol and symbolFrom for that reason.
+-- Expect the input to be MetaString s (returning s), or MetaInlines [Str s]
+-- (returning s). Useful when the input is a symbol standing for an option, like
+-- the no-title above, and you do not want to require the user to enclose the
+-- option in quotation marks. Used in symbol and symbolFrom for that reason.
 ```
 
 ## Errors
