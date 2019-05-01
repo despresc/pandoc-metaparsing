@@ -9,9 +9,9 @@ values" similar to megaparsec), and the parsers in the library have a notion of
 "current input", in contrast to the JSON `Object` parsers of aeson. However,
 unlike normal parsers the input is a _value_ and not a _stream_ (since objects
 with fields don't have a defined forward direction), and so the current input
-has to be advanced deeper into composite objects manually. The `FromValue` and
-`FromObject` classes and various predefined parsers and combinators make this
-process relatively painless.
+has to be advanced deeper into composite objects manually; these parsers do not
+consume their input. The `FromValue` and `FromObject` classes and various
+predefined parsers and combinators make this process relatively painless.
 
 ## Example
 
