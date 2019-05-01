@@ -211,12 +211,14 @@ instance Semigroup MetaError where
 instance Monoid MetaError where
   mempty = MetaNullError
 
--- | Show the branch of the argument, without the @Meta@ part, except that @MetaString@ is shown as @Text@. Used for simple type errors.
+-- | Show the branch of the argument, without the @Meta@ part, except that
+-- @MetaString@ is shown as @Text@ and @MetaMap@ is shown as @Object@. Used for
+-- simple type errors.
 showMetaValueType :: MetaValue -> String
 showMetaValueType x = case x of
-  MetaString _  -> "String"
+  MetaString _  -> "Text"
   MetaBool _    -> "Bool"
-  MetaMap _     -> "Map"
+  MetaMap _     -> "Object"
   MetaList _    -> "List"
   MetaInlines _ -> "Inlines"
   MetaBlocks _  -> "Blocks"
@@ -440,7 +442,7 @@ parseMetaMap = liftResult go
   where
     go x = case x of
       MetaMap m -> pure m
-      z         -> throwTypeError "Map" z
+      z         -> throwTypeError "Object" z
 
 -- | Succeeds on @MetaString@.
 parseString :: ParseValue String
