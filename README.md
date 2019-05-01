@@ -96,7 +96,7 @@ onlyFields fs p :: ParseObject a
 f .?! a :: ParseObject a
 -- Parse the value of the field f with parseValue if it is present. Otherwise return a.
 
-symbolLike :: ParseValue String
+symbollike :: ParseValue String
 -- Expect the input to be MetaString s (returning s), or MetaInlines [Str s]
 -- (returning s). Useful when the input is a symbol standing for an option, like
 -- the no-title above, and you do not want to require the user to enclose the
