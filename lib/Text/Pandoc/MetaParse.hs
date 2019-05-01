@@ -109,7 +109,7 @@ import           Text.Pandoc.Builder  (Blocks, Inlines, fromList)
 -- Suppose you expect the @contributors@ field of your document's `Meta` to
 -- consist of a list of @{ name: [Inline]; location: [Inline]; title: (no-title
 -- | [Inline]) }@ entries, with the @title@ field having the default @no-title@
--- if it is not present. You can create the (somewhat silly) types
+-- if it is not present. You can create the types
 --
 -- > data ContributorTitle = NoTitle | HasTitle Inlines
 -- >
