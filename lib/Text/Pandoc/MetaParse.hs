@@ -101,22 +101,25 @@ module Text.Pandoc.MetaParse
   , parseOfValue
   ) where
 
-import           Control.Applicative
-import           Control.Monad.Except
+import           Control.Applicative    (Alternative (..), liftA2)
+import           Control.Monad          (MonadPlus (..))
+import           Control.Monad.Except   (MonadError (..))
 import           Control.Monad.Fail     (MonadFail)
 import qualified Control.Monad.Fail     as Fail
-import           Control.Monad.Reader
+import           Control.Monad.Reader   (ReaderT (..), ask)
 import           Data.List              (intercalate)
 import qualified Data.List.NonEmpty     as NE
 import           Data.Map               (Map)
 import qualified Data.Map               as Map
 import           Data.Maybe             (fromMaybe, mapMaybe)
+import           Data.Semigroup         (stimes, stimesIdempotent,
+                                         stimesIdempotentMonoid)
 import qualified Data.Set               as Set
 import           Data.Text              (Text)
 import qualified Data.Text              as Text
+
 import           Text.Pandoc.Builder    (Blocks, Inlines, fromList)
 import           Text.Pandoc.Definition
-import Data.Semigroup
 
 -- $use
 -- Suppose you expect the @contributors@ field of your document's `Meta` to
