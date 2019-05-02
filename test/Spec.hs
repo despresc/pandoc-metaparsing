@@ -46,7 +46,7 @@ main = hspec $ do
         invalidTitle = MetaString "foo"
         invalidMeta = setMeta "contributors" [ toSource (toMetaValue nameS) (toMetaValue locationS) (Just invalidTitle)] nullMeta
         invalidMeta' = setMeta "contributors" [ insert "foo" (str "thing") $ toSource nameS locationS Nothing ] nullMeta
-        expectedError = MetaWhenParseError "field contributors" . MetaWhenParseError "field title" . MetaExpectGotError (expectationFromList [ "no-title", "inline title"])
+        expectedError = MetaWhenParseError "field contributors" . MetaWhenParseError "field title" . MetaExpectGotError (expectationFromList [ "\"no-title\"", "inline title"])
     it "parses valid contributors" $
       fromMetaField "contributors" sourceMeta `shouldBe` Success [expectS, expectW]
     it "throws correctly on one invalid title field" $

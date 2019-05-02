@@ -286,7 +286,7 @@ showMetaValueType x = NE.fromList $ case x of
 --
 --   * If a `MetaExpectGotError` is entirely empty, we print @some error@. If the `Expectation` field is non-empty we print @expected: @ then a comma-separated list of the contents of `Expectation`. If the `MetaErrorMessage` is not `Nothing`, we print @got error: @ or @got value: @ followed by the message, depending on its contents. If both are present we print these on separate lines.
 --   * For a @`MetaFieldUnknown` k@ error we print @unknown field: k@.
---   * For @`MetaWhenParseError` e f@, we first print @`simpleErrorShow` e@, then print @when parsing: f@ on a new line.
+--   * For @`MetaWhenParseError` e f@, we first print @`simpleErrorShow` e@, then print @when parsing f@ on a new line.
 simpleErrorShow :: MetaError -> String
 simpleErrorShow (MetaExpectGotError e m)
   | Set.null (unExpectation e) = maybe "some error" meshow m
@@ -296,7 +296,7 @@ simpleErrorShow (MetaExpectGotError e m)
     meshow (MetaErrorValue x)   = "got value: " <> NE.toList x
     showExp = intercalate ", " . expectationToList
 simpleErrorShow (MetaFieldUnknown f) = "unknown field: " <> f
-simpleErrorShow (MetaWhenParseError k e) = simpleErrorShow e <> "\nwhen parsing: " <> k
+simpleErrorShow (MetaWhenParseError k e) = simpleErrorShow e <> "\nwhen parsing " <> k
 simpleErrorShow MetaNullError = "unknown error"
 
 -- | Throw a simple type error, printing the branch of the @MetaValue@ as what was received.
@@ -504,7 +504,8 @@ symbollike = liftResult go
       z                   -> throwTypeError "symbol" z
 
 -- | Parse a "symbol", a string representing an element of a Haskell type @a@.
--- The parser @symbol sym x@ succeeds and returns @x@ if `symbollike` returns @sym@.
+-- The parser @symbol sym x@ succeeds and returns @x@ if `symbollike` returns
+-- @sym@. See also `symbolFrom`.
 --
 -- We use `symbollike` and not the `parseString` or the `Text` instance of
 -- `parseValue` because Pandoc will parse bare text as @[Inline]@ and we would
@@ -518,11 +519,12 @@ symbol sym a = symbolFrom [(sym, a)]
 -- | Parse a symbol from a given table. The parser @symbolFrom tbl@ succeeds if
 -- `symbollike` returns @sym@ and @sym@ is found in the table. If @sym@ is not,
 -- we throw an error with an @unexpected symbol sym@ message in a
--- `MetaErrorMessage`, using the symbols themselves as the `Expectation`.
+-- `MetaErrorMessage`, using the symbols themselves as the `Expectation`. See
+-- also `symbol`.
 symbolFrom :: [(String, a)] -> ParseValue a
 symbolFrom tbl = symbollike >>= lookStr
   where
-    expects = fst <$> tbl
+    expects = (\x -> "\"" <> x <> "\"") . fst <$> tbl
     lookStr x = case lookup x tbl of
       Just a  -> pure a
       Nothing -> throwExpectMessage expects ("unexpected symbol " <> x)
