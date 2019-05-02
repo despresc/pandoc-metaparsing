@@ -5,7 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 
 {-|
-Module      : Text.Pandoc.MetaParse
+Module      : Text.Pandoc.MetaParsing
 Copyright   : (C) 2019 Christian Despres
 License     : MIT
 Stability   : experimental
@@ -13,7 +13,7 @@ Stability   : experimental
 Simple parsing of Pandoc `Meta` metadata.
 -}
 
-module Text.Pandoc.MetaParse
+module Text.Pandoc.MetaParsing
   (
   -- * Using this library
   -- $use

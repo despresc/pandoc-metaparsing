@@ -4,7 +4,7 @@ import           Test.Hspec
 import           Text.Pandoc.Builder
 import           Text.Pandoc.Definition
 
-import           Text.Pandoc.MetaParse
+import           Text.Pandoc.MetaParsing
 
 resultExplode :: Result a -> IO a
 resultExplode (Error e)   = error $ simpleErrorShow e
