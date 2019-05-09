@@ -306,7 +306,7 @@ throwTypeError :: MonadError MetaError m
                => String -- ^ What was expected.
                -> MetaValue -- ^ What was received
                -> m a
-throwTypeError s = throwError . MetaExpectGotError (expectationFromList [s]) . Just . MetaErrorMessage . showMetaValueType
+throwTypeError s = throwError . MetaExpectGotError (expectationFromList [s]) . Just . MetaErrorValue . showMetaValueType
 
 -- | Throw an expectation/value error (`MetaErrorValue` inside a `MetaExpectGotError`). Filters empty strings out of the error.
 throwExpectGot :: MonadError MetaError m
