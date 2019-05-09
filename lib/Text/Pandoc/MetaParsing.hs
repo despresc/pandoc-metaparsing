@@ -243,27 +243,29 @@ instance Semigroup MetaErrorMessage where
 -- | Possible errors during parsing. The `Semigroup` instance (which is
 -- idempotent) determines how the errors are combined with `<|>`. Briefly, we
 -- prefer to keep values with constructors that appear earlier in the
--- declaration, and that are leftmost if the constructors are the same. The
--- exception is that two `MetaExpectGotError` values will have their
--- `Expectation` fields merged, using the `Semigroup` instances of `Maybe` and
--- `MetaErrorMessage` to decide what message is kept.
+-- declaration, and that are leftmost if the constructors are the same. There are two exceptions:
+--
+--  * For two `MetaWhenParseError` values, if their `String` fields are the same we combine their inner `MetaError` and otherwise keep the leftmost.
+--  * For two `MetaExpectGotError` values, we combine their `Expectation` and @Maybe `MetaErrorMessage`@ fields according to their particular semigroup instances.
+
 data MetaError
-  = MetaExpectGotError Expectation (Maybe MetaErrorMessage) -- ^ @Expected: x, got value: s@ or @Expected: x, got error: s@.
+  = MetaWhenParseError String MetaError  -- ^ Got error @e@ when parsing @k@
+  | MetaExpectGotError Expectation (Maybe MetaErrorMessage) -- ^ @Expected: x, got value: s@ or @Expected: x, got error: s@.
   | MetaFieldUnknown Field -- ^ Unknown field: @k@.
-  | MetaWhenParseError String MetaError  -- ^ Got error @e@ when parsing @k@
   | MetaNullError -- ^ Unknown error (thrown by `empty`)
   deriving (Eq, Ord, Show)
 
 instance Semigroup MetaError where
   (<>) = go
     where
+      go (MetaWhenParseError k e) (MetaWhenParseError k' e') = if k == k' then MetaWhenParseError k (e <> e') else MetaWhenParseError k e
+      go (MetaWhenParseError k e) _ = MetaWhenParseError k e
+      go _ (MetaWhenParseError k e) = MetaWhenParseError k e
       go (MetaExpectGotError e ms) (MetaExpectGotError e' ms') = MetaExpectGotError (e <> e') (ms <> ms')
       go (MetaExpectGotError e s) _ = MetaExpectGotError e s
       go _ (MetaExpectGotError e s) = MetaExpectGotError e s
       go (MetaFieldUnknown s) _ = MetaFieldUnknown s
       go _ (MetaFieldUnknown s) = MetaFieldUnknown s
-      go (MetaWhenParseError k e) _ = MetaWhenParseError k e
-      go _ (MetaWhenParseError k e) = MetaWhenParseError k e
       go MetaNullError MetaNullError = MetaNullError
   stimes = stimesIdempotentMonoid
 
